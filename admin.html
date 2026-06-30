@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AUDICOM Hub — Admin</title>
+  <link rel="stylesheet" href="shared/style.css">
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="shared/firebase-init.js"></script>
+  <script src="shared/auth-guard.js"></script>
+  <script src="shared/utils.js"></script>
+
+  <style>
+    .admin-main { max-width: 960px; margin: 0 auto; padding: 32px 24px 60px; }
+    .admin-title { font-size: 22px; font-weight: 600; margin-bottom: 24px; }
+
+    /* ── Users ── */
+    .user-table { width: 100%; border-collapse: collapse; }
+    .user-table th {
+      text-align: left; font-size: 11px; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+    }
+    .user-row { border-bottom: 1px solid var(--border); }
+    .user-row:last-child { border-bottom: none; }
+    .user-row td { padding: 14px 12px; font-size: 14px; vertical-align: middle; }
+    .user-email { color: var(--muted); font-size: 12px; }
+    .user-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    .projects-check { display: flex; flex-wrap: wrap; gap: 8px; }
+    .proj-chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; border-radius: 100px;
+      font-size: 12px; cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent; color: var(--muted);
+      font-family: 'Barlow', sans-serif;
+      transition: all 0.18s;
+    }
+    .proj-chip.active { background: var(--accent-dim); border-color: rgba(59,130,246,0.4); color: var(--text); }
+    .proj-chip input { display: none; }
+
+    /* ── Config ── */
+    .config-list { display: flex; flex-direction: column; gap: 10px; }
+    .config-item {
+      display: grid;
+      grid-template-columns: 1fr 2fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .config-label { font-size: 13px; font-weight: 500; }
+    .config-key   { font-size: 11px; color: var(--muted); font-family: monospace; }
+    .config-value-wrap { position: relative; }
+    .config-eye {
+      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; color: var(--muted); cursor: pointer; padding: 0;
+    }
+    .config-value { padding-right: 36px !important; font-family: monospace; font-size: 13px; }
+
+    /* ── Projects list ── */
+    .proj-list { display: flex; flex-direction: column; gap: 8px; }
+    .proj-item {
+      display: grid;
+      grid-template-columns: 40px 1fr auto auto auto;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .proj-icon { font-size: 22px; text-align: center; }
+    .proj-name { font-size: 14px; font-weight: 500; }
+    .proj-slug { font-size: 11px; color: var(--muted); font-family: monospace; }
+
+    .toggle {
+      position: relative; width: 36px; height: 20px; flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track {
+      position: absolute; inset: 0; background: var(--border);
+      border-radius: 10px; cursor: pointer; transition: background 0.2s;
+    }
+    .toggle input:checked + .toggle-track { background: var(--accent); }
+    .toggle-thumb {
+      position: absolute; top: 3px; left: 3px;
+      width: 14px; height: 14px; background: #fff;
+      border-radius: 50%; transition: left 0.2s;
+      pointer-events: none;
+    }
+    .toggle input:checked ~ .toggle-thumb { left: 19px; }
+
+    /* ── Modal wide ── */
+    .modal-wide { max-width: 640px; }
+    .proj-access-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .access-chip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); cursor: pointer;
+      transition: all 0.18s;
+    }
+    .access-chip.active { background: var(--accent-dim); border-color: rgba(59,130,246,0.4); }
+    .access-chip input { display: none; }
+    .access-chip-name { font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <div class="page-loading" id="pageLoading"><div class="spinner"></div></div>
+
+  <nav class="navbar">
+    <a href="hub.html" class="navbar-brand">AUDICOM <span>Hub</span></a>
+    <div class="navbar-right">
+      <span class="nav-user" id="navUserName"></span>
+      <a href="hub.html" class="btn btn-ghost btn-sm">← Hub</a>
+      <button class="btn btn-ghost btn-sm" onclick="fazerLogout()">Sair</button>
+    </div>
+  </nav>
+
+  <main class="admin-main">
+    <h1 class="admin-title">Painel Administrativo</h1>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('usuarios', this)">Usuários</button>
+      <button class="tab-btn" onclick="switchTab('configuracoes', this)">Configurações</button>
+      <button class="tab-btn" onclick="switchTab('projetos', this)">Projetos</button>
+      <button class="tab-btn" onclick="switchTab('ferramentas', this)">Ferramentas</button>
+    </div>
+
+    <!-- ===== TAB USUÁRIOS ===== -->
+    <div class="tab-panel active" id="tab-usuarios">
+      <div class="flex justify-between items-center" style="margin-bottom:16px">
+        <p class="text-muted text-sm">Usuários registrados no sistema.</p>
+        <button class="btn btn-primary btn-sm" id="btnNovoUsuario" style="display:none" onclick="abrirModalNovoUsuario()">+ Novo usuário</button>
+      </div>
+      <div class="glass" style="padding:0;overflow:hidden">
+        <table class="user-table" id="userTable">
+          <thead>
+            <tr>
+              <th>Nome / E-mail</th>
+              <th>Papel</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="userTableBody">
+            <tr><td colspan="4" style="padding:20px;color:var(--muted);text-align:center">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== TAB CONFIGURAÇÕES ===== -->
+    <div class="tab-panel" id="tab-configuracoes">
+      <div class="flex justify-between items-center" style="margin-bottom:16px">
+        <p class="text-muted text-sm">Chaves de API, tokens e configurações do sistema.</p>
+        <button class="btn btn-ghost btn-sm" onclick="abrirModalConfig()">+ Nova chave</button>
+      </div>
+      <div class="config-list" id="configList">
+        <p style="color:var(--muted);font-size:13px">Carregando…</p>
+      </div>
+    </div>
+
+    <!-- ===== TAB PROJETOS ===== -->
+    <div class="tab-panel" id="tab-projetos">
+      <div class="flex justify-between items-center" style="margin-bottom:16px">
+        <p class="text-muted text-sm">Projetos disponíveis no hub.</p>
+        <button class="btn btn-ghost btn-sm" onclick="abrirModalProjeto()">+ Novo projeto</button>
+      </div>
+      <div class="proj-list" id="projetoList">
+        <p style="color:var(--muted);font-size:13px">Carregando…</p>
+      </div>
+    </div>
+
+    <!-- ===== TAB FERRAMENTAS ===== -->
+    <div class="tab-panel" id="tab-ferramentas">
+      <div style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- Card: Importar Manutenções -->
+        <div class="glass" style="padding:24px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+            <div>
+              <h3 style="margin:0 0 6px;font-size:15px;font-weight:600;color:var(--text)">Importar Manutenções</h3>
+              <p class="text-muted text-sm" style="margin:0 0 4px">Sobe o arquivo <code>audicom.manutencoes.json</code> (exportação do MongoDB) para o Firestore.</p>
+              <p class="text-muted text-sm" style="margin:0">Imagens embutidas nos comentários são automaticamente removidas (limite de 1MB por documento).</p>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:10px;min-width:160px">
+              <input type="file" id="importManutFile" accept=".json" style="display:none" onchange="importarManutencoes(this)">
+              <button class="btn btn-primary btn-sm" onclick="document.getElementById('importManutFile').click()">
+                Selecionar JSON
+              </button>
+              <div id="importManutProgress" style="font-size:12px;text-align:right;min-height:16px"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===== MODAL: EDITAR USUÁRIO ===== -->
+  <div class="modal-backdrop" id="modalUser">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="modalUserTitle">Editar usuário</h3>
+        <button class="modal-close" onclick="fecharModal('modalUser')">×</button>
+      </div>
+
+      <input type="hidden" id="editUserId">
+
+      <div class="form-group">
+        <label>Nome</label>
+        <input type="text" id="editUserName" class="input" placeholder="Nome do usuário">
+      </div>
+
+      <div class="form-group mt-12">
+        <label>Papel (role)</label>
+        <select id="editUserRole" class="input">
+          <option value="user">Usuário (sem permissões de admin)</option>
+          <option value="admin">Admin</option>
+          <!-- superadmin é irrevogável, não aparece como opção -->
+        </select>
+        <p class="text-muted text-sm mt-8" id="superAdminNote" style="display:none">
+          Este usuário é <strong>Super Admin</strong> — papel irrevogável.
+        </p>
+      </div>
+
+      <div class="form-group mt-16">
+        <label>Acesso aos projetos</label>
+        <div class="proj-access-grid" id="projAccessGrid"></div>
+      </div>
+
+      <div class="form-group mt-16">
+        <label>Permissões Administrativas Específicas</label>
+        <p class="text-muted text-sm mt-4">Concede acesso às abas de administração dentro do respectivo projeto.</p>
+        <div class="proj-access-grid" id="projAdminAccessGrid"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModal('modalUser')">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarUsuario()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: NOVO USUÁRIO ===== -->
+  <div class="modal-backdrop" id="modalNovoUsuario">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3>Criar novo usuário</h3>
+        <button class="modal-close" onclick="fecharModal('modalNovoUsuario')">×</button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nome</label>
+          <input type="text" id="newUserNome" class="input" placeholder="Nome completo">
+        </div>
+        <div class="form-group">
+          <label>Papel (role)</label>
+          <select id="newUserRole" class="input">
+            <option value="user">Usuário</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group mt-12">
+        <label>E-mail</label>
+        <input type="email" id="newUserEmail" class="input" placeholder="usuario@audicom.com.br">
+      </div>
+
+      <div class="form-row mt-12">
+        <div class="form-group">
+          <label>Senha</label>
+          <div style="position:relative">
+            <input type="password" id="newUserSenha" class="input" placeholder="Mínimo 6 caracteres" style="padding-right:36px">
+            <button type="button" onclick="toggleSenhaVis('newUserSenha')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;padding:0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Confirmar senha</label>
+          <div style="position:relative">
+            <input type="password" id="newUserSenha2" class="input" placeholder="Repita a senha" style="padding-right:36px">
+            <button type="button" onclick="toggleSenhaVis('newUserSenha2')" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;padding:0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="senhaMatchMsg" style="font-size:12px;margin-top:4px;min-height:16px"></div>
+
+      <div class="form-group mt-16">
+        <label>Acesso aos projetos</label>
+        <div class="proj-access-grid" id="newUserProjGrid"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModal('modalNovoUsuario')">Cancelar</button>
+        <button class="btn btn-primary" id="btnCriarUsuario" onclick="criarUsuario()">Criar usuário</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: CONFIG ===== -->
+  <div class="modal-backdrop" id="modalConfig">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalConfigTitle">Nova configuração</h3>
+        <button class="modal-close" onclick="fecharModal('modalConfig')">×</button>
+      </div>
+
+      <input type="hidden" id="editConfigId">
+
+      <div class="form-group">
+        <label>Chave (ID no Firestore)</label>
+        <input type="text" id="editConfigKey" class="input" placeholder="ex: gemini-api-key">
+      </div>
+      <div class="form-group mt-12">
+        <label>Nome legível</label>
+        <input type="text" id="editConfigLabel" class="input" placeholder="ex: Gemini API Key">
+      </div>
+      <div class="form-group mt-12">
+        <label>Valor</label>
+        <input type="text" id="editConfigValue" class="input" placeholder="Valor da configuração">
+      </div>
+      <div class="form-group mt-12">
+        <label>Descrição (opcional)</label>
+        <input type="text" id="editConfigDesc" class="input" placeholder="Para que serve essa chave">
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModal('modalConfig')">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarConfig()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODAL: PROJETO ===== -->
+  <div class="modal-backdrop" id="modalProjeto">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalProjetoTitle">Novo projeto</h3>
+        <button class="modal-close" onclick="fecharModal('modalProjeto')">×</button>
+      </div>
+
+      <input type="hidden" id="editProjetoId">
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ícone (emoji)</label>
+          <input type="text" id="editProjetoIcon" class="input" placeholder="📁" maxlength="4">
+        </div>
+        <div class="form-group">
+          <label>Ordem</label>
+          <input type="number" id="editProjetoOrdem" class="input" placeholder="1" min="1">
+        </div>
+      </div>
+      <div class="form-group mt-12">
+        <label>Nome</label>
+        <input type="text" id="editProjetoNome" class="input" placeholder="Suporte Roteadores">
+      </div>
+      <div class="form-group mt-12">
+        <label>ID / Slug</label>
+        <input type="text" id="editProjetoSlug" class="input" placeholder="suporte-roteadores">
+        <p class="text-muted text-sm mt-8">Usado no controle de acesso. Sem espaços ou acentos.</p>
+      </div>
+      <div class="form-group mt-12">
+        <label>URL</label>
+        <input type="text" id="editProjetoUrl" class="input" placeholder="projetos/suporte-roteadores/index.html">
+      </div>
+      <div class="form-group mt-12">
+        <label>Descrição (opcional)</label>
+        <input type="text" id="editProjetoDesc" class="input" placeholder="Breve descrição do projeto">
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="fecharModal('modalProjeto')">Cancelar</button>
+        <button class="btn btn-primary" onclick="salvarProjeto()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="_toast"></div>
+
+  <script>
+    let currentAdmin = null;
+    let allProjects  = [];
+
+    // ── Projetos padrão ─────────────────────────────
+    const PROJETOS_PADRAO = [
+      { id: 'suporte-roteadores',     name: 'Suporte Roteadores',         icon: '🔧', url: 'projetos/suporte-roteadores/index.html',          desc: 'Guias técnicos de roteadores e equipamentos',    ordem: 1, enabled: true },
+      { id: 'suporte-operacoes',      name: 'Suporte Operações',          icon: '📡', url: 'projetos/suporte-operacoes/index.html',           desc: 'Tutoriais e procedimentos de ativação de ONU',   ordem: 2, enabled: true },
+      { id: 'sistema-chamados',       name: 'Sistema de Chamados',        icon: '🎫', url: 'projetos/sistema-chamados/index.html',            desc: 'Scripts e modelos para atendimento ao cliente',  ordem: 3, enabled: true },
+      { id: 'analise-de-chats',       name: 'Análise de Chats',           icon: '💬', url: 'projetos/analise-de-chats/index.html',           desc: 'Análise de conversas com inteligência artificial',ordem: 4, enabled: true },
+      { id: 'solicitacao-manutencoes',name: 'Solicitação de Manutenções', icon: '🔨', url: 'projetos/solicitação-manuntenções/index.html',   desc: 'Gestão de solicitações de manutenção técnica',   ordem: 5, enabled: true },
+    ];
+
+    // ── Config padrão ────────────────────────────────
+    const CONFIG_PADRAO = [
+      { id: 'gemini-api-key',  label: 'Gemini API Key',  value: '', desc: 'Chave da API do Google Gemini (usada na análise de chats)' },
+      { id: 'openai-api-key',  label: 'OpenAI API Key',  value: '', desc: 'Chave da API da OpenAI (alternativa ao Gemini)' },
+      { id: 'api-url-interna', label: 'URL API Interna', value: '', desc: 'Endereço do servidor interno (se necessário)' },
+    ];
+
+    requireAdmin().then(async ({ user, userData }) => {
+      currentAdmin = userData;
+      document.getElementById('navUserName').textContent = userData.name || userData.email;
+      document.getElementById('pageLoading').classList.add('hide');
+      if (userData.role === 'superadmin' || userData.role === 'admin') {
+        document.getElementById('btnNovoUsuario').style.display = 'inline-flex';
+      }
+
+      // Auto-seed: preenche o banco na primeira vez que o admin abre o painel
+      await autoSeed();
+
+      await carregarProjetos(); // Load projects first!
+      carregarUsuarios();
+      carregarConfig();
+    });
+
+    async function autoSeed() {
+      const batch = db.batch();
+      let seeded = false;
+
+      // Projetos
+      const projSnap = await db.collection('projetos-lista').limit(1).get();
+      if (projSnap.empty) {
+        PROJETOS_PADRAO.forEach(p => {
+          const { id, ...data } = p;
+          batch.set(db.collection('projetos-lista').doc(id), data);
+        });
+        seeded = true;
+      }
+
+      // Config
+      const cfgSnap = await db.collection('config').limit(1).get();
+      if (cfgSnap.empty) {
+        CONFIG_PADRAO.forEach(c => {
+          const { id, ...data } = c;
+          batch.set(db.collection('config').doc(id), data);
+        });
+        seeded = true;
+      }
+
+      if (seeded) {
+        await batch.commit();
+        showToast('Banco de dados inicializado automaticamente ✓', 'success');
+      }
+    }
+
+    /* ─── TABS ─────────────────────────────────────── */
+    function switchTab(id, btn) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + id).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    /* ─── MODAIS ────────────────────────────────────── */
+    function abrirModal(id) { document.getElementById(id).classList.add('open'); }
+    function fecharModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    document.querySelectorAll('.modal-backdrop').forEach(m => {
+      m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+    });
+
+    /* ═══════════════════════════════════════════════
+       USUÁRIOS
+    ═══════════════════════════════════════════════ */
+    async function carregarUsuarios() {
+      const tbody = document.getElementById('userTableBody');
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;color:var(--muted);text-align:center">Carregando…</td></tr>';
+
+      const snap = await db.collection('users').orderBy('createdAt').get();
+
+      if (snap.empty) {
+        tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;color:var(--muted);text-align:center">Nenhum usuário.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = '';
+      snap.forEach(doc => {
+        const u = { id: doc.id, ...doc.data() };
+        const badgeClass = u.role === 'superadmin' ? 'badge-superadmin' : u.role === 'admin' ? 'badge-admin' : 'badge-user';
+        const badgeLabel = u.role === 'superadmin' ? 'Super Admin' : u.role === 'admin' ? 'Admin' : 'Usuário';
+        const isSelf = u.id === auth.currentUser.uid;
+        const isSuperAdmin = u.role === 'superadmin';
+
+        let acessosHTML = '';
+        if (u.role === 'superadmin' || u.role === 'admin') {
+            acessosHTML = '<span class="badge" style="background:rgba(16,185,129,.15);color:#10b981;font-size:11px"><i class="fas fa-check-double"></i> Acesso Total</span>';
+        } else {
+            const projs = [];
+            allProjects.forEach(p => {
+                const isNormal = u.projects && u.projects[p.id];
+                const isAdm = u.adminProjects && u.adminProjects[p.id];
+                
+                if (isAdm) {
+                    projs.push(`<span class="badge" style="background:rgba(251, 191, 36, 0.15);color:#fbbf24;font-size:11px;margin-right:4px;margin-bottom:4px;display:inline-block;border:1px solid rgba(251, 191, 36, 0.3)">${p.icon} ${p.name} <i class="fas fa-crown" style="margin-left:4px" title="Admin neste projeto"></i></span>`);
+                } else if (isNormal) {
+                    projs.push(`<span class="badge" style="background:rgba(255,255,255,.05);color:#9ca3af;font-size:11px;margin-right:4px;margin-bottom:4px;display:inline-block;border:1px solid rgba(255,255,255,.1)">${p.icon} ${p.name}</span>`);
+                }
+            });
+            acessosHTML = projs.length > 0 ? projs.join('') : '<span style="color:#6b7280;font-size:11px;font-style:italic">Sem acessos</span>';
+        }
+
+        tbody.innerHTML += `
+          <tr class="user-row">
+            <td>
+              <div style="font-weight:500">${u.name || '—'} ${isSelf ? '<span style="color:var(--muted);font-size:11px">(você)</span>' : ''}</div>
+              <div class="user-email">${u.email}</div>
+            </td>
+            <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
+              <td style="max-width:300px;white-space:normal;padding-top:14px;padding-bottom:10px">${acessosHTML}</td>
+            <td>
+              <div class="user-actions">
+                <button class="btn btn-ghost btn-sm" onclick="editarUsuario('${u.id}')">Editar acesso</button>
+                ${!isSuperAdmin && !isSelf ? `<button class="btn btn-danger btn-sm" onclick="confirmarExcluirUsuario('${u.id}', '${(u.name || u.email).replace(/'/g, '')}')">Excluir</button>` : ''}
+              </div>
+            </td>
+          </tr>`;
+      });
+    }
+
+    async function editarUsuario(userId) {
+      const snap = await db.collection('users').doc(userId).get();
+      const u = { id: userId, ...snap.data() };
+      const isSuperAdmin = u.role === 'superadmin';
+
+      document.getElementById('editUserId').value = userId;
+      document.getElementById('editUserName').value = u.name || '';
+      document.getElementById('editUserRole').value  = isSuperAdmin ? 'superadmin' : (u.role || 'user');
+      document.getElementById('editUserRole').disabled = isSuperAdmin;
+      document.getElementById('superAdminNote').style.display = isSuperAdmin ? 'block' : 'none';
+      document.getElementById('modalUserTitle').textContent = `Editar: ${u.name || u.email}`;
+
+      // Renderiza chips de projetos
+      const grid = document.getElementById('projAccessGrid');
+      grid.innerHTML = '';
+      allProjects.forEach(p => {
+        const checked = u.projects && u.projects[p.id] ? 'active' : '';
+        const checkedAttr = u.projects && u.projects[p.id] ? 'checked' : '';
+        grid.innerHTML += `
+          <label class="access-chip ${checked}" id="chip-${p.id}">
+            <input type="checkbox" name="proj" value="${p.id}" ${checkedAttr} onchange="toggleChip(this, 'chip-${p.id}')">
+            <span>${p.icon || '📁'}</span>
+            <span class="access-chip-name">${p.name}</span>
+          </label>`;
+      });
+
+      
+      // Renderiza chips de admin de projetos
+      const gridAdmin = document.getElementById('projAdminAccessGrid');
+      if (gridAdmin) {
+        gridAdmin.innerHTML = '';
+        allProjects.filter(p => p.id === 'solicitacao-manutencoes').forEach(p => {
+          const checked = u.adminProjects && u.adminProjects[p.id] ? 'active' : '';
+          const checkedAttr = u.adminProjects && u.adminProjects[p.id] ? 'checked' : '';
+          gridAdmin.innerHTML += `
+            <label class="access-chip ${checked}" id="chip-adm-${p.id}">
+              <input type="checkbox" name="projAdm" value="${p.id}" ${checkedAttr} onchange="toggleChip(this, 'chip-adm-${p.id}')">
+              <span><i class="fas fa-crown"></i></span>
+              <span class="access-chip-name">${p.name}</span>
+            </label>`;
+        });
+      }
+      abrirModal('modalUser');
+    }
+
+    function toggleChip(checkbox, chipId) {
+      document.getElementById(chipId).classList.toggle('active', checkbox.checked);
+    }
+
+    async function salvarUsuario() {
+      const userId = document.getElementById('editUserId').value;
+      const name   = document.getElementById('editUserName').value.trim();
+      const role   = document.getElementById('editUserRole').value;
+
+      // Monta objeto de projetos
+      
+      const projects = {};
+      document.querySelectorAll('#projAccessGrid input[type=checkbox]').forEach(cb => {
+        projects[cb.value] = cb.checked;
+      });
+
+      const adminProjects = {};
+      document.querySelectorAll('#projAdminAccessGrid input[type=checkbox]').forEach(cb => {
+        adminProjects[cb.value] = cb.checked;
+      });
+
+
+      // Superadmin não pode ter role alterado
+      const snap = await db.collection('users').doc(userId).get();
+      const current = snap.data();
+      const finalRole = current.role === 'superadmin' ? 'superadmin' : role;
+
+      // Admin não pode promover para superadmin
+      if (currentAdmin.role !== 'superadmin' && finalRole === 'superadmin') {
+        showToast('Apenas o Super Admin pode definir este papel.', 'error');
+        return;
+      }
+
+      try {
+        await db.collection('users').doc(userId).update({ name, role: finalRole, projects, adminProjects });
+        showToast('Usuário atualizado.', 'success');
+        fecharModal('modalUser');
+        carregarUsuarios();
+      } catch (err) {
+        showToast('Erro: ' + err.message, 'error');
+      }
+    }
+
+    function confirmarExcluirUsuario(userId, nome) {
+      if (!confirm(`Excluir "${nome}" do sistema? (O usuário continuará no Firebase Auth — remova manualmente pelo console se necessário.)`)) return;
+      db.collection('users').doc(userId).delete()
+        .then(() => { showToast('Usuário removido.', 'success'); carregarUsuarios(); })
+        .catch(err => showToast('Erro: ' + err.message, 'error'));
+    }
+
+    /* ═══════════════════════════════════════════════
+       CONFIGURAÇÕES
+    ═══════════════════════════════════════════════ */
+    async function carregarConfig() {
+      const list = document.getElementById('configList');
+      list.innerHTML = '<p style="color:var(--muted);font-size:13px">Carregando…</p>';
+
+      const snap = await db.collection('config').orderBy('label').get();
+
+      if (snap.empty) {
+        list.innerHTML = '<p style="color:var(--muted);font-size:13px">Nenhuma configuração ainda. Clique em "+ Nova chave".</p>';
+        return;
+      }
+
+      list.innerHTML = '';
+      snap.forEach(doc => {
+        const c = { id: doc.id, ...doc.data() };
+        const eyeId = `eye-${doc.id}`;
+        const inputId = `val-${doc.id}`;
+        list.innerHTML += `
+          <div class="config-item">
+            <div>
+              <div class="config-label">${c.label || c.id}</div>
+              <div class="config-key">${c.id}</div>
+              ${c.desc ? `<div class="text-muted text-sm">${c.desc}</div>` : ''}
+            </div>
+            <div class="config-value-wrap">
+              <input type="password" id="${inputId}" class="input config-value" value="${c.value || ''}" readonly>
+              <button class="config-eye" id="${eyeId}" onclick="toggleEye('${inputId}', '${eyeId}')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+            <div class="flex gap-8">
+              <button class="btn btn-ghost btn-sm" onclick="editarConfig('${doc.id}')">Editar</button>
+              <button class="btn btn-danger btn-sm" onclick="excluirConfig('${doc.id}')">×</button>
+            </div>
+          </div>`;
+      });
+    }
+
+    function toggleEye(inputId, eyeId) {
+      const inp = document.getElementById(inputId);
+      inp.type = inp.type === 'password' ? 'text' : 'password';
+    }
+
+    function abrirModalConfig(id = null) {
+      document.getElementById('editConfigId').value = '';
+      document.getElementById('editConfigKey').value = '';
+      document.getElementById('editConfigLabel').value = '';
+      document.getElementById('editConfigValue').value = '';
+      document.getElementById('editConfigDesc').value = '';
+      document.getElementById('modalConfigTitle').textContent = 'Nova configuração';
+      document.getElementById('editConfigKey').disabled = false;
+      if (id) editarConfig(id);
+      else abrirModal('modalConfig');
+    }
+
+    async function editarConfig(id) {
+      const snap = await db.collection('config').doc(id).get();
+      const c = snap.data();
+      document.getElementById('editConfigId').value    = id;
+      document.getElementById('editConfigKey').value   = id;
+      document.getElementById('editConfigKey').disabled = true;
+      document.getElementById('editConfigLabel').value  = c.label || '';
+      document.getElementById('editConfigValue').value  = c.value || '';
+      document.getElementById('editConfigDesc').value   = c.desc || '';
+      document.getElementById('modalConfigTitle').textContent = 'Editar: ' + (c.label || id);
+      abrirModal('modalConfig');
+    }
+
+    async function salvarConfig() {
+      const id    = document.getElementById('editConfigId').value.trim();
+      const key   = document.getElementById('editConfigKey').value.trim();
+      const label = document.getElementById('editConfigLabel').value.trim();
+      const value = document.getElementById('editConfigValue').value.trim();
+      const desc  = document.getElementById('editConfigDesc').value.trim();
+      const docId = id || key;
+
+      if (!docId || !label) { showToast('Preencha ao menos a chave e o nome.', 'error'); return; }
+
+      try {
+        await db.collection('config').doc(docId).set({ label, value, desc }, { merge: true });
+        showToast('Configuração salva.', 'success');
+        fecharModal('modalConfig');
+        carregarConfig();
+      } catch (err) { showToast('Erro: ' + err.message, 'error'); }
+    }
+
+    function excluirConfig(id) {
+      if (!confirm(`Excluir a configuração "${id}"?`)) return;
+      db.collection('config').doc(id).delete()
+        .then(() => { showToast('Removido.', 'success'); carregarConfig(); })
+        .catch(err => showToast('Erro: ' + err.message, 'error'));
+    }
+
+    /* ═══════════════════════════════════════════════
+       PROJETOS
+    ═══════════════════════════════════════════════ */
+    async function carregarProjetos() {
+      const list = document.getElementById('projetoList');
+      list.innerHTML = '<p style="color:var(--muted);font-size:13px">Carregando…</p>';
+
+      const snap = await db.collection('projetos-lista').orderBy('ordem').get();
+      allProjects = [];
+      snap.forEach(doc => allProjects.push({ id: doc.id, ...doc.data() }));
+
+      if (allProjects.length === 0) {
+        list.innerHTML = '<p style="color:var(--muted);font-size:13px">Nenhum projeto ainda. Clique em "+ Novo projeto".</p>';
+        return;
+      }
+
+      list.innerHTML = '';
+      allProjects.forEach(p => {
+        list.innerHTML += `
+          <div class="proj-item">
+            <div class="proj-icon">${p.icon || '📁'}</div>
+            <div>
+              <div class="proj-name">${p.name}</div>
+              <div class="proj-slug">${p.id} · ${p.url || ''}</div>
+            </div>
+            <label class="toggle" title="${p.enabled ? 'Ativo' : 'Inativo'}">
+              <input type="checkbox" ${p.enabled ? 'checked' : ''} onchange="toggleProjeto('${p.id}', this.checked)">
+              <div class="toggle-track"></div>
+              <div class="toggle-thumb"></div>
+            </label>
+            <button class="btn btn-ghost btn-sm" onclick="editarProjeto('${p.id}')">Editar</button>
+            <button class="btn btn-danger btn-sm" onclick="excluirProjeto('${p.id}')">×</button>
+          </div>`;
+      });
+    }
+
+    async function toggleProjeto(id, enabled) {
+      await db.collection('projetos-lista').doc(id).update({ enabled });
+      showToast(enabled ? 'Projeto ativado.' : 'Projeto desativado.', 'info');
+    }
+
+    function abrirModalProjeto() {
+      ['editProjetoId','editProjetoIcon','editProjetoNome','editProjetoSlug','editProjetoUrl','editProjetoDesc'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('editProjetoOrdem').value = allProjects.length + 1;
+      document.getElementById('editProjetoSlug').disabled = false;
+      document.getElementById('modalProjetoTitle').textContent = 'Novo projeto';
+      abrirModal('modalProjeto');
+    }
+
+    async function editarProjeto(id) {
+      const snap = await db.collection('projetos-lista').doc(id).get();
+      const p = snap.data();
+      document.getElementById('editProjetoId').value    = id;
+      document.getElementById('editProjetoIcon').value  = p.icon || '';
+      document.getElementById('editProjetoOrdem').value = p.ordem || 1;
+      document.getElementById('editProjetoNome').value  = p.name || '';
+      document.getElementById('editProjetoSlug').value  = id;
+      document.getElementById('editProjetoSlug').disabled = true;
+      document.getElementById('editProjetoUrl').value   = p.url || '';
+      document.getElementById('editProjetoDesc').value  = p.desc || '';
+      document.getElementById('modalProjetoTitle').textContent = 'Editar: ' + p.name;
+      abrirModal('modalProjeto');
+    }
+
+    async function salvarProjeto() {
+      const existingId = document.getElementById('editProjetoId').value;
+      const slug  = document.getElementById('editProjetoSlug').value.trim().toLowerCase().replace(/\s+/g,'-');
+      const id    = existingId || slug;
+      const name  = document.getElementById('editProjetoNome').value.trim();
+      const icon  = document.getElementById('editProjetoIcon').value.trim();
+      const ordem = parseInt(document.getElementById('editProjetoOrdem').value) || 1;
+      const url   = document.getElementById('editProjetoUrl').value.trim();
+      const desc  = document.getElementById('editProjetoDesc').value.trim();
+
+      if (!id || !name) { showToast('Preencha nome e slug.', 'error'); return; }
+
+      try {
+        await db.collection('projetos-lista').doc(id).set({ name, icon, ordem, url, desc, enabled: true }, { merge: true });
+        showToast('Projeto salvo.', 'success');
+        fecharModal('modalProjeto');
+        carregarProjetos();
+      } catch (err) { showToast('Erro: ' + err.message, 'error'); }
+    }
+
+    function excluirProjeto(id) {
+      if (!confirm(`Excluir o projeto "${id}" do hub? (O conteúdo do projeto em Firestore não é afetado.)`)) return;
+      db.collection('projetos-lista').doc(id).delete()
+        .then(() => { showToast('Projeto removido.', 'success'); carregarProjetos(); })
+        .catch(err => showToast('Erro: ' + err.message, 'error'));
+    }
+
+    /* ═══════════════════════════════════════════════
+       CRIAR NOVO USUÁRIO (superadmin only)
+    ═══════════════════════════════════════════════ */
+    function toggleSenhaVis(id) {
+      const inp = document.getElementById(id);
+      inp.type = inp.type === 'password' ? 'text' : 'password';
+    }
+
+    function abrirModalNovoUsuario() {
+      ['newUserNome','newUserEmail','newUserSenha','newUserSenha2'].forEach(id => document.getElementById(id).value = '');
+      const roleSelect = document.getElementById('newUserRole');
+      roleSelect.innerHTML = '<option value="user">Usuário</option>';
+      if (currentAdmin && currentAdmin.role === 'superadmin') {
+        roleSelect.innerHTML += '<option value="admin">Admin</option>';
+      }
+      roleSelect.value = 'user';
+      document.getElementById('senhaMatchMsg').textContent = '';
+      document.getElementById('btnCriarUsuario').disabled = false;
+
+      // Chips de projetos — todos desmarcados
+      const grid = document.getElementById('newUserProjGrid');
+      grid.innerHTML = '';
+      allProjects.forEach(p => {
+        grid.innerHTML += `
+          <label class="access-chip" id="nchip-${p.id}">
+            <input type="checkbox" name="newproj" value="${p.id}" onchange="toggleChip(this, 'nchip-${p.id}')">
+            <span>${p.icon || '📁'}</span>
+            <span class="access-chip-name">${p.name}</span>
+          </label>`;
+      });
+
+      // Validação em tempo real das senhas
+      const s1 = document.getElementById('newUserSenha');
+      const s2 = document.getElementById('newUserSenha2');
+      const msg = document.getElementById('senhaMatchMsg');
+      const checar = () => {
+        if (!s2.value) { msg.textContent = ''; return; }
+        if (s1.value === s2.value) {
+          msg.style.color = 'var(--success, #34d399)';
+          msg.textContent = '✓ Senhas coincidem';
+        } else {
+          msg.style.color = 'var(--danger, #ef4444)';
+          msg.textContent = '✗ Senhas não coincidem';
+        }
+      };
+      s1.oninput = checar;
+      s2.oninput = checar;
+
+      abrirModal('modalNovoUsuario');
+      setTimeout(() => document.getElementById('newUserNome').focus(), 50);
+    }
+
+    async function criarUsuario() {
+      const nome  = document.getElementById('newUserNome').value.trim();
+      const email = document.getElementById('newUserEmail').value.trim();
+      const senha = document.getElementById('newUserSenha').value;
+      const senha2 = document.getElementById('newUserSenha2').value;
+      const role  = document.getElementById('newUserRole').value;
+
+      if (!email)           { showToast('E-mail é obrigatório.', 'error'); return; }
+      if (!senha)           { showToast('Senha é obrigatória.', 'error'); return; }
+      if (senha.length < 6) { showToast('Senha deve ter ao menos 6 caracteres.', 'error'); return; }
+      if (senha !== senha2) { showToast('As senhas não coincidem.', 'error'); return; }
+      if (currentAdmin.role !== 'superadmin' && role !== 'user') {
+        showToast('Admins só podem criar usuários com perfil "Usuário".', 'error'); return;
+      }
+
+      const btn = document.getElementById('btnCriarUsuario');
+      btn.disabled = true;
+      btn.textContent = 'Criando…';
+
+      // Monta projetos selecionados
+      const projects = {};
+      document.querySelectorAll('#newUserProjGrid input[type=checkbox]').forEach(cb => {
+        projects[cb.value] = cb.checked;
+      });
+
+      let secondaryApp = null;
+      try {
+        // App secundário — evita fazer logout do admin atual
+        const appName = 'secondary_' + Date.now();
+        secondaryApp = firebase.initializeApp(firebase.app().options, appName);
+        const secondaryAuth = secondaryApp.auth();
+
+        const cred = await secondaryAuth.createUserWithEmailAndPassword(email, senha);
+        const uid  = cred.user.uid;
+
+        await db.collection('users').doc(uid).set({
+          name: nome || email,
+          email,
+          role,
+          projects,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        await secondaryAuth.signOut();
+        await secondaryApp.delete();
+
+        showToast(`Usuário "${nome || email}" criado com sucesso!`, 'success');
+        fecharModal('modalNovoUsuario');
+        carregarUsuarios();
+      } catch (err) {
+        if (secondaryApp) { try { await secondaryApp.delete(); } catch {} }
+        const msgs = {
+          'auth/email-already-in-use': 'Este e-mail já está cadastrado no Firebase.',
+          'auth/invalid-email':        'E-mail inválido.',
+          'auth/weak-password':        'Senha muito fraca. Use ao menos 6 caracteres.',
+        };
+        showToast(msgs[err.code] || 'Erro: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Criar usuário';
+      }
+    }
+
+    // ── Importar Manutenções (MongoDB JSON → Firestore) ────────────
+    async function importarManutencoes(input) {
+      const file = input.files[0];
+      input.value = '';
+      if (!file) return;
+
+      const progressEl = document.getElementById('importManutProgress');
+      progressEl.innerHTML = '<span style="color:var(--muted)">Lendo arquivo…</span>';
+
+      let records;
+      try {
+        const text = await file.text();
+        records = JSON.parse(text);
+        if (!Array.isArray(records)) throw new Error('O arquivo deve ser um array JSON.');
+      } catch (e) {
+        progressEl.innerHTML = '<span style="color:var(--danger)">Erro: ' + e.message + '</span>';
+        showToast('Arquivo inválido: ' + e.message, 'error');
+        return;
+      }
+
+      if (!confirm('Importar ' + records.length + ' registros para o Sistema de Manutenções?\n\nRegistros com o mesmo ID serão sobrescritos.')) {
+        progressEl.innerHTML = '';
+        return;
+      }
+
+      const colRef = db.collection('projetos').doc('solicitacao-manutencoes').collection('solicitacoes');
+      let batch = db.batch();
+      let batchSize = 0;
+      let count = 0;
+      let imgsStripped = 0;
+
+      const flushBatch = async () => {
+        if (batchSize === 0) return;
+        await batch.commit();
+        batch = db.batch();
+        batchSize = 0;
+      };
+
+      try {
+        for (const rec of records) {
+          const id = (rec._id && rec._id.$oid) ? rec._id.$oid : colRef.doc().id;
+          const docRef = colRef.doc(id);
+
+          // Remove imagens base64 inline (evita exceder 1MB por doc)
+          let comentarioAdm = rec.comentarioAdm || '';
+          const semImg = comentarioAdm.replace(/\[IMAGEM:data:image\/[^\]]+\]/g, '[📷 imagem]');
+          if (semImg !== comentarioAdm) { imgsStripped++; comentarioAdm = semImg; }
+
+          let dataHora = null;
+          if (rec.dataHora && rec.dataHora.$date) {
+            dataHora = firebase.firestore.Timestamp.fromDate(new Date(rec.dataHora.$date));
+          }
+
+          batch.set(docRef, {
+            nome:         rec.nome         || '',
+            cpf:          rec.cpf          || '',
+            titulo:       rec.titulo       || '',
+            descricao:    rec.descricao    || '',
+            destinatario: rec.destinatario || null,
+            prioridade:   rec.prioridade   || 'medio',
+            status:       rec.status       || 'pendente',
+            dataHora,
+            comentarioAdm,
+          });
+
+          count++;
+          batchSize++;
+
+          if (batchSize >= 400) {
+            await flushBatch();
+            progressEl.innerHTML = '<span style="color:var(--muted)">' + count + ' / ' + records.length + ' importados…</span>';
+          }
+        }
+
+        await flushBatch();
+
+        const extra = imgsStripped > 0
+          ? ' (' + imgsStripped + ' registro(s) com imagens nos comentários — imagens removidas)'
+          : '';
+        progressEl.innerHTML = '<span style="color:var(--success, #34d399)">✓ ' + count + ' registros importados' + extra + '</span>';
+        showToast(count + ' registros importados com sucesso!', 'success');
+
+      } catch (err) {
+        progressEl.innerHTML = '<span style="color:var(--danger)">Erro: ' + err.message + '</span>';
+        showToast('Erro na importação: ' + err.message, 'error');
+      }
+    }
+  </script>
+</body>
+</html>

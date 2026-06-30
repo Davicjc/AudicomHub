@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suporte de Roteadores - AUDICOM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <script src="../../shared/firebase-init.js"></script>
+    <script src="../../shared/auth-guard.js"></script>
+</head>
+<body>
+
+    <div id="appContent" style="display:none">
+
+        <!-- ── Sidebar ─────────────────────────────────────── -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-row">
+                    <div class="sidebar-brand-icon"><i class="fas fa-router"></i></div>
+                    <h1>Roteadores</h1>
+                </div>
+                <p>Configurações AUDICOM</p>
+            </div>
+
+            <nav id="tabsNav" class="sidebar-nav">
+                <div class="nav-section-label">Sistema</div>
+                
+                
+                <div class="tab-wrapper">
+                    <button class="tab-btn active" onclick="selectTab(this); window.mostrarPainelEspecifico('dns')">
+                        <div class="nav-icon"><i class="fas fa-globe"></i></div>
+                        <span>DNS</span>
+                    </button>
+                </div>
+
+                <div class="tab-wrapper">
+                    <button class="tab-btn" onclick="selectTab(this); window.mostrarPainelEspecifico('senhas')">
+                        <div class="nav-icon"><i class="fas fa-lock"></i></div>
+                        <span>Senhas</span>
+                    </button>
+                </div>
+
+                <div class="tab-wrapper">
+                    <button class="tab-btn" onclick="selectTab(this); window.mostrarPainelEspecifico('olts')">
+                        <div class="nav-icon"><i class="fas fa-broadcast-tower"></i></div>
+                        <span>OLTs</span>
+                    </button>
+                </div>
+
+                <div class="tab-wrapper">
+                    <button class="tab-btn" onclick="selectTab(this); window.mostrarPainelEspecifico('vlans')">
+                        <div class="nav-icon"><i class="fas fa-sitemap"></i></div>
+                        <span>VLANs</span>
+                    </button>
+                </div>
+
+                <div class="tab-wrapper">
+                    <button class="tab-btn" onclick="selectTab(this); window.mostrarPainelEspecifico('presets')">
+                        <div class="nav-icon"><i class="fas fa-microchip"></i></div>
+                        <span>Presets</span>
+                    </button>
+                </div>
+
+                <div class="nav-section-label" style="margin-top: 20px;">Ferramentas</div>
+                
+                <div class="tab-wrapper">
+                    <button class="tab-btn" onclick="abrirLixeira()" style="color: #ef4444;">
+                        <div class="nav-icon"><i class="fas fa-trash-alt"></i></div>
+                        <span>Lixeira</span>
+                    </button>
+                </div>
+
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="../../hub.html" class="sidebar-btn" style="text-decoration: none; text-align: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 10px;">
+                    <i class="fas fa-arrow-left"></i> Voltar ao Hub
+                </a>
+                <button onclick="window.location.reload(true)" class="sidebar-btn">
+                    <i class="fas fa-sync-alt"></i> Atualizar Página
+                </button>
+            </div>
+        </aside>
+
+        <!-- ── Conteúdo ─────────────────────────────────────── -->
+        <main class="content-area" id="mainContent">
+            
+            <section class="screen active" style="display:block;">
+                
+            <div class="tutorial-header">
+                <div class="tutorial-header-top">
+                    <div class="tut-icon"><i class="fas fa-router"></i></div>
+                    <div class="tut-title-block">
+                        <h2>Suporte de Roteadores</h2>
+                        <p>Sistema técnico AUDICOM - DNS, VLANs, OLTs e Configurações</p>
+                    </div>
+                </div>
+            </div>
+
+                <div class="container">
+
+                
+
+                <section class="info-panels">
+
+                    <div id="dns-panel" class="info-panel card">
+                        <div class="panel-header">
+                            <h2><i class="fas fa-globe"></i> Servidores DNS AUDICOM</h2>
+                            <button class="copy-section-btn btn" onclick="copiarSecao('dns')">
+                                <i class="fas fa-copy"></i> Copiar Tudo
+                            </button>
+                        </div>
+                        <div class="panel-content" id="dns-content">
+                            <p class="section-description">Lista dos servidores DNS utilizados pela AUDICOM</p>
+                        </div>
+                    </div>
+
+                    <div id="senhas-panel" class="info-panel card">
+                        <div class="panel-header">
+                            <h2><i class="fas fa-lock"></i> Senhas de Equipamentos</h2>
+                            <button class="copy-section-btn btn" onclick="copiarSecao('senhas')">
+                                <i class="fas fa-copy"></i> Copiar Tudo
+                            </button>
+                        </div>
+                        <div class="panel-content" id="senhas-content">
+                            <p class="section-description">Lista de senhas padrão para rádios e roteadores</p>
+                        </div>
+                    </div>
+
+                    <div id="olts-panel" class="info-panel card">
+                        <div class="panel-header">
+                            <h2><i class="fas fa-broadcast-tower"></i> OLTs - Equipamentos e Acessos</h2>
+                            <button class="copy-section-btn btn" onclick="copiarSecao('olts')">
+                                <i class="fas fa-copy"></i> Copiar Tudo
+                            </button>
+                        </div>
+                        <div class="panel-content" id="olts-content">
+                            <p class="section-description">Lista completa de OLTs com endereços, senhas e localizações</p>
+                            <div class="search-container">
+                                <div class="search-input-wrapper">
+                                    <i class="fas fa-search search-icon"></i>
+                                    <input type="text" id="olt-search" class="search-input"
+                                        placeholder="Pesquisar OLTs por nome, localização ou URL..."
+                                        oninput="filtrarOLTs(this.value)">
+                                    <button class="search-clear" onclick="limparPesquisaOLT()" title="Limpar">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="olts-list"></div>
+                        </div>
+                    </div>
+
+                    <div id="vlans-panel" class="info-panel card">
+                        <div class="panel-header">
+                            <h2><i class="fas fa-sitemap"></i> VLANs por Localização</h2>
+                            <button class="copy-section-btn btn" onclick="copiarSecao('vlans')">
+                                <i class="fas fa-copy"></i> Copiar Tudo
+                            </button>
+                        </div>
+                        <div class="panel-content" id="vlans-content">
+                            <p class="section-description">Configurações de VLAN organizadas por PON e localização</p>
+                        </div>
+                    </div>
+
+                    <div id="presets-panel" class="info-panel card">
+                        <div class="panel-header">
+                            <h2><i class="fas fa-microchip"></i> Presets de Roteadores</h2>
+                            <button class="copy-section-btn btn" onclick="copiarSecao('presets')">
+                                <i class="fas fa-copy"></i> Copiar Tudo
+                            </button>
+                        </div>
+                        <div class="panel-content" id="presets-content"></div>
+                    </div>
+
+                </section>
+            </div>
+                
+                <footer class="footer" style="margin-top: 40px; text-align: center; font-size: 13px; color: var(--text-2);">
+                    <p>&copy; 2025 AUDICOM Telecom - Sistema de Suporte Técnico</p>
+                </footer>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Modal Info Arquivo -->
+    <div id="arqInfoModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:28px;width:95%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                <h3 style="margin:0;color:#f1f5f9;font-size:1.1rem"><i class="fas fa-file-alt" style="color:#818cf8;margin-right:8px"></i> Informações do Arquivo</h3>
+                <button onclick="document.getElementById('arqInfoModal').style.display='none'" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:18px;padding:4px"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="arqInfoBody" style="margin-bottom:20px"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end">
+                <button onclick="document.getElementById('arqInfoModal').style.display='none'" style="padding:10px 20px;background:none;border:1px solid #334155;border-radius:8px;color:#94a3b8;cursor:pointer;font-family:inherit;font-size:14px">Fechar</button>
+                <button id="arqInfoDownloadBtn" style="padding:10px 24px;background:#4f46e5;border:none;border-radius:8px;color:#fff;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600"><i class="fas fa-download"></i> Download</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Lixeira -->
+    <div id="lixeiraModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:28px;width:95%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-shrink:0">
+                <h3 style="margin:0;color:#f1f5f9;font-size:1.1rem"><i class="fas fa-trash-alt" style="color:#ef4444;margin-right:8px"></i> Lixeira</h3>
+                <button onclick="fecharLixeira()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:18px;padding:4px"><i class="fas fa-times"></i></button>
+            </div>
+            <p style="font-size:12px;color:#64748b;margin:0 0 16px;flex-shrink:0">Qualquer usuário pode restaurar itens. Apenas o super admin pode apagar permanentemente.</p>
+            <div id="lixeiraContent" style="overflow-y:auto;flex:1"></div>
+        </div>
+    </div>
+
+    <!-- Modal Admin Genérico -->
+    <div id="admModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center">
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:28px;width:95%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+                <h3 id="admModalTitle" style="margin:0;color:#f1f5f9;font-size:1.1rem"></h3>
+                <button onclick="fecharModalAdmin()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:18px;padding:4px"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="admModalFields"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+                <button onclick="fecharModalAdmin()" style="padding:10px 20px;background:none;border:1px solid #334155;border-radius:8px;color:#94a3b8;cursor:pointer;font-family:inherit;font-size:14px">Cancelar</button>
+                <button onclick="confirmarModalAdmin()" style="padding:10px 24px;background:#4f46e5;border:none;border-radius:8px;color:#fff;cursor:pointer;font-family:inherit;font-size:14px;font-weight:600">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .adm-field { margin-bottom: 14px; }
+        .adm-label { display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px; }
+        .adm-input { width:100%;padding:9px 12px;background:#0f172a;border:1px solid #334155;border-radius:8px;color:#f1f5f9;font-family:inherit;font-size:14px;box-sizing:border-box; }
+        .adm-input:focus { outline:none;border-color:#4f46e5; }
+        .adm-btn { padding:4px 8px;border:1px solid #334155;border-radius:6px;background:#1e293b;color:#94a3b8;cursor:pointer;font-size:11px;display:inline-flex;align-items:center;gap:4px;transition:.15s; }
+        .adm-btn:hover { border-color:#4f46e5;color:#818cf8; }
+        .adm-btn.adm-del:hover { border-color:#ef4444;color:#f87171; }
+        .adm-btn.adm-add { background:#0f172a;border-style:dashed;color:#64748b;width:100%;justify-content:center;padding:10px;margin-top:10px;border-radius:8px;font-size:13px; }
+        .adm-btn.adm-add:hover { border-color:#4f46e5;color:#818cf8; }
+        #admModal { display:none; }
+        #admModal[style*="flex"] { display:flex !important; }
+        #lixeiraModal { display:none; }
+        #lixeiraModal[style*="flex"] { display:flex !important; }
+        .lixeira-btn { background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.35);color:#f87171; }
+        .lixeira-btn:hover { background:rgba(239,68,68,.18);border-color:#ef4444; }
+        .lixeira-item { display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;margin-bottom:8px;gap:12px; }
+        .lixeira-item--restaurado { opacity:.5; }
+        .lixeira-info { flex:1;min-width:0; }
+        .lixeira-nome { font-size:13px;font-weight:600;color:#f1f5f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+        .lixeira-meta { font-size:11px;color:#64748b;margin-top:2px; }
+        .lixeira-actions { display:flex;gap:6px;flex-shrink:0; }
+        .lixeira-tag-restaurado { font-size:10px;font-weight:500;color:#22c55e;background:rgba(34,197,94,.1);border-radius:4px;padding:1px 5px;vertical-align:middle; }
+        .item-autor { font-size:11px;color:#475569;margin-top:3px; }
+        #arqInfoModal { display:none; }
+        #arqInfoModal[style*="flex"] { display:flex !important; }
+        .arq-info-row { display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid #1e293b; }
+        .arq-info-row:last-child { border-bottom:none; }
+        .arq-info-label { font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;margin-right:12px; }
+        .arq-info-val { font-size:13px;color:#f1f5f9;text-align:right;word-break:break-all; }
+    </style>
+    
+    <div id="notification" class="notification"><i class="fas fa-check-circle"></i> <span></span></div>
+
+    <script src="js/app.js"></script>
+    <script>
+        function selectTab(btn) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        requireAuth('suporte-roteadores').then(({ user, userData }) => {
+            window._isAdmin     = userData.role === 'superadmin' || userData.role === 'admin';
+            window._isSuperAdmin = userData.role === 'superadmin';
+            window._userEmail   = user.email;
+            
+            document.getElementById('appContent').style.display = 'flex';
+            
+            if (typeof iniciarApp === 'function') {
+                iniciarApp();
+                setTimeout(() => window.mostrarPainelEspecifico("dns"), 100);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AUDICOM Hub — Login</title>
+  <link rel="stylesheet" href="shared/style.css">
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="shared/firebase-init.js"></script>
+  <script src="shared/utils.js"></script>
+
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+      background: radial-gradient(ellipse at 50% 0%, #0d1b33 0%, #090909 65%);
+    }
+
+    .login-wrap { width: 100%; max-width: 380px; }
+
+    .login-logo {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .login-logo h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--text);
+    }
+    .login-logo p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+    .login-card { padding: 36px; }
+
+    .form-group + .form-group { margin-top: 14px; }
+    .form-group label { display: block; font-size: 12px; color: var(--muted); font-weight: 500; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .error-inline {
+      font-size: 12px;
+      color: var(--danger);
+      margin-top: 6px;
+      display: none;
+    }
+
+    .btn-login {
+      width: 100%;
+      margin-top: 20px;
+      padding: 11px;
+      font-size: 14px;
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 22px 0 16px;
+    }
+    .divider hr { flex: 1; border: none; border-top: 1px solid var(--border); }
+    .divider span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .forgot-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 13px;
+      font-family: 'Barlow', sans-serif;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+      transition: color 0.18s;
+    }
+    .forgot-btn:hover { color: var(--text); }
+
+    .reset-panel {
+      margin-top: 14px;
+      padding: 16px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(59,130,246,0.2);
+      border-radius: var(--radius-sm);
+      display: none;
+    }
+    .reset-panel p { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .reset-success { color: var(--success); font-size: 13px; margin-top: 8px; display: none; }
+
+    .version {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.15);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-wrap">
+    <div class="login-logo">
+      <h1>AUDICOM</h1>
+      <p>Hub · Sistema Interno</p>
+    </div>
+
+    <div class="login-card glass">
+      <form id="loginForm" novalidate>
+        <div class="form-group">
+          <label for="emailInput">E-mail</label>
+          <input type="email" id="emailInput" class="input" placeholder="seu@email.com" autocomplete="email" required>
+        </div>
+        <div class="form-group">
+          <label for="senhaInput">Senha</label>
+          <input type="password" id="senhaInput" class="input" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+        <div class="error-inline" id="loginError"></div>
+        <button type="submit" class="btn btn-primary btn-login" id="loginBtn">Entrar</button>
+      </form>
+
+      <div class="divider"><hr><span>ou</span><hr></div>
+
+      <button class="forgot-btn" onclick="toggleReset()">Esqueci minha senha</button>
+
+      <div class="reset-panel" id="resetPanel">
+        <p>Informe seu e-mail para receber o link de redefinição.</p>
+        <input type="email" id="resetEmail" class="input" placeholder="seu@email.com">
+        <div class="error-inline" id="resetError" style="display:none;margin-top:6px"></div>
+        <button class="btn btn-ghost btn-sm w-full mt-12" onclick="enviarReset()">Enviar link</button>
+        <div class="reset-success" id="resetSuccess">Link enviado! Verifique sua caixa de entrada.</div>
+      </div>
+    </div>
+
+    <p class="version">AUDICOM Hub v2.0 · Firebase</p>
+  </div>
+
+  <div class="toast" id="_toast"></div>
+
+  <script>
+    auth.onAuthStateChanged(user => {
+      if (user) window.location.href = 'hub.html';
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+
+      const email = document.getElementById('emailInput').value.trim();
+      const senha = document.getElementById('senhaInput').value;
+      const errEl = document.getElementById('loginError');
+      const btn   = document.getElementById('loginBtn');
+
+      errEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Entrando…';
+
+      try {
+        const { user } = await auth.signInWithEmailAndPassword(email, senha);
+
+        // Cria documento Firestore se não existir (primeiro login)
+        const snap = await db.collection('users').doc(user.uid).get();
+        if (!snap.exists) {
+          await db.collection('users').doc(user.uid).set({
+            email: user.email,
+            name: user.displayName || user.email.split('@')[0],
+            role: 'user',
+            projects: {},
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+
+        window.location.href = 'hub.html';
+      } catch (err) {
+        errEl.textContent = traduzirErroAuth(err.code);
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Entrar';
+      }
+    });
+
+    function toggleReset() {
+      const p = document.getElementById('resetPanel');
+      const isHidden = !p.style.display || p.style.display === 'none';
+      p.style.display = isHidden ? 'block' : 'none';
+      if (isHidden) {
+        document.getElementById('resetEmail').value = document.getElementById('emailInput').value;
+        document.getElementById('resetError').style.display = 'none';
+        document.getElementById('resetSuccess').style.display = 'none';
+      }
+    }
+
+    async function enviarReset() {
+      const email  = document.getElementById('resetEmail').value.trim();
+      const errEl  = document.getElementById('resetError');
+      const sucEl  = document.getElementById('resetSuccess');
+      errEl.style.display = 'none';
+      sucEl.style.display = 'none';
+
+      if (!email) {
+        errEl.textContent = 'Digite um e-mail.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      try {
+        await auth.sendPasswordResetEmail(email);
+        sucEl.style.display = 'block';
+      } catch (err) {
+        errEl.textContent = traduzirErroAuth(err.code);
+        errEl.style.display = 'block';
+      }
+    }
+
+    function traduzirErroAuth(code) {
+      const map = {
+        'auth/user-not-found':        'Usuário não encontrado.',
+        'auth/wrong-password':        'Senha incorreta.',
+        'auth/invalid-email':         'E-mail inválido.',
+        'auth/invalid-credential':    'E-mail ou senha incorretos.',
+        'auth/too-many-requests':     'Muitas tentativas. Aguarde e tente novamente.',
+        'auth/network-request-failed':'Sem conexão. Verifique sua internet.',
+        'auth/user-disabled':         'Conta desativada. Fale com o administrador.',
+      };
+      return map[code] || 'Erro inesperado. Tente novamente.';
+    }
+  </script>
+</body>
+</html>

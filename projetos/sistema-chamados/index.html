@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Chamados - AUDICOM</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <script src="../../shared/firebase-init.js"></script>
+    <script src="../../shared/auth-guard.js"></script>
+</head>
+<body>
+
+    <div id="appContent" style="display:none">
+
+        <!-- ── Sidebar ─────────────────────────────────────── -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-row">
+                    <div class="sidebar-brand-icon"><i class="fas fa-headset"></i></div>
+                    <h1>Chamados</h1>
+                </div>
+                <p>Sistema Técnico AUDICOM</p>
+            </div>
+
+            <nav id="tabsNav" class="sidebar-nav">
+                <div class="nav-section-label">Menu</div>
+                
+                <div class="tab-wrapper">
+                    <button class="tab-btn active" onclick="showSection('dashboard-tab'); selectTab(this)">
+                        <div class="nav-icon"><i class="fas fa-list"></i></div>
+                        <span>Dashboard</span>
+                    </button>
+                </div>
+
+                <div class="tab-wrapper">
+                    <button class="tab-btn" onclick="showSection('script-tab'); selectTab(this)">
+                        <div class="nav-icon"><i class="fas fa-message"></i></div>
+                        <span>Script para Cliente</span>
+                    </button>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="../../hub.html" class="sidebar-btn" style="text-decoration: none; text-align: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 10px;">
+                    <i class="fas fa-arrow-left"></i> Voltar ao Hub
+                </a>
+                <button id="checkUpdatesBtn" class="sidebar-btn">
+                    <i class="fas fa-sync-alt"></i> Atualizar Página
+                </button>
+            </div>
+        </aside>
+
+        <!-- ── Conteúdo ─────────────────────────────────────── -->
+        <main class="content-area" id="mainContent">
+            
+            <div id="dashboard-tab" class="screen active" style="display:block;">
+                
+            <div class="tutorial-header">
+                <div class="tutorial-header-top">
+                    <div class="tut-icon"><i class="fas fa-headset"></i></div>
+                    <div class="tut-title-block">
+                        <h2>Sistema de Chamados</h2>
+                        <p>Gerador de scripts para chamados técnicos</p>
+                    </div>
+                </div>
+            </div>
+
+                <section class="auto-mode-section">
+            <div class="auto-mode-card">
+                <h2><i class="fas fa-robot"></i> Abertura Automática <span class="ai-badge">IA</span></h2>
+                <p class="auto-mode-desc">Cole os dados do HUBSOFT e/ou JAMES. A Audinha IA extrai e preenche tudo automaticamente.</p>
+
+                <div class="auto-inputs-grid">
+                    <div class="input-col">
+                        <button type="button" class="btn-how-to" data-img="assets/Hubsoft.png" data-caption="Pressione CTRL+A dentro da página do cliente no HUBSOFT para selecionar tudo, depois CTRL+C e cole aqui.">
+                            <i class="fas fa-circle-question"></i> Como copiar do HUBSOFT?
+                        </button>
+                        <div class="input-panel">
+                            <div class="panel-header hubsoft-header">
+                                <i class="fas fa-database"></i>
+                                <span>HUBSOFT</span>
+                                <span class="tag-optional">opcional</span>
+                                <button type="button" class="btn-clear-input" data-target="hubsoftData" title="Limpar"><i class="fas fa-times"></i></button>
+                            </div>
+                            <textarea id="hubsoftData" rows="10" placeholder="Cole aqui os dados do cliente extraídos do HUBSOFT...
+
+Exemplo:
+(4194) JULIANO RODRIGUES RIZZA
+(0) 65_ 100MB FIBRA URBANO
+INSTALAÇÃO: Rua X, 123..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="input-col">
+                        <button type="button" class="btn-how-to james-how-to" data-img="assets/James.png" data-caption="Copie desde o status 'Pendente' lá em cima até o horário da última mensagem do chat, depois cole aqui.">
+                            <i class="fas fa-circle-question"></i> Como copiar do JAMES?
+                        </button>
+                        <div class="input-panel">
+                            <div class="panel-header james-header">
+                                <i class="fas fa-comments"></i>
+                                <span>JAMES</span>
+                                <span class="tag-optional">opcional</span>
+                                <button type="button" class="btn-clear-input" data-target="jamesData" title="Limpar"><i class="fas fa-times"></i></button>
+                            </div>
+                            <textarea id="jamesData" rows="10" placeholder="Cole aqui o chat/protocolo do JAMES...
+
+Exemplo:
+Nº protocolo: 90327
+Cliente: Jânio Silva
+Telefone: 553498380212
+Status: Serviço Habilitado
+[chat do atendimento...]"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="auto-mode-actions">
+                    <button type="button" id="processarIABtn" class="btn btn-ai-process">
+                        <i class="fas fa-wand-magic-sparkles"></i> Processar com Audinha IA
+                    </button>
+                </div>
+
+                <div id="extractionStatus" class="extraction-status" style="display:none">
+                    <div class="extraction-title"><i class="fas fa-check-double"></i> Dados extraídos:</div>
+                    <div class="extraction-items" id="extractionItems"></div>
+                </div>
+            </div>
+        </section>
+                <section class="form-section">
+            <div class="form-card">
+                <h2><i class="fas fa-file-medical"></i> Dados do Chamado</h2>
+                <form id="chamadoForm" class="chamado-form">
+                    <div class="form-group">
+                        <label for="codigo"><i class="fas fa-code"></i> Código: <span style="color:#ef4444">*</span></label>
+                        <input type="text" id="codigo" name="codigo" placeholder="Digite o código do cliente (1234)">
+                    </div>
+                    <div class="form-group">
+                        <label for="cliente"><i class="fas fa-user"></i> Cliente: <span style="color:#ef4444">*</span></label>
+                        <input type="text" id="cliente" name="cliente" placeholder="Nome do cliente Hubsoft">
+                    </div>
+                    <div class="form-group">
+                        <label for="ponto"><i class="fas fa-wifi"></i> Ponto:</label>
+                        <input type="text" id="ponto" name="ponto" placeholder="Ex: (0) 32_06MB_RURAL_PROMO">
+                    </div>
+                    <div class="form-group">
+                        <label for="falha"><i class="fas fa-exclamation-triangle"></i> Falha: <span style="color:#ef4444">*</span></label>
+                        <textarea id="falha" name="falha" rows="3" placeholder="Descreva o problema relatado pelo cliente"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="telefone"><i class="fas fa-phone"></i> Telefone: <span style="color:#ef4444">*</span></label>
+                        <input type="tel" id="telefone" name="telefone" placeholder="Telefone de contato">
+                    </div>
+                    <div class="form-group">
+                        <label for="disponibilidade"><i class="fas fa-clock"></i> Disponibilidade:</label>
+                        <input type="text" id="disponibilidade" name="disponibilidade" placeholder="Ex: manhã, tarde, 8:00 às 17:00">
+                    </div>
+                    <div class="form-group">
+                        <label for="responsavel"><i class="fas fa-user-check"></i> Pessoa que irá receber o técnico:</label>
+                        <input type="text" id="responsavel" name="responsavel" placeholder="Nome da pessoa responsável">
+                    </div>
+                    <div class="form-group">
+                        <label for="localCliente"><i class="fas fa-home"></i> Local informado pelo cliente: <span style="color:#ef4444">*</span></label>
+                        <textarea id="localCliente" name="localCliente" rows="2" placeholder="Endereço completo do cliente (preferencialmente em link)"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="protocolo"><i class="fas fa-file-alt"></i> Protocolo: <span style="color:#ef4444">*</span></label>
+                        <input type="text" id="protocolo" name="protocolo" placeholder="Número do protocolo Hubsoft">
+                    </div>
+                    <div class="form-group">
+                        <label for="protocoloJames"><i class="fas fa-ticket-alt"></i> Protocolo James:</label>
+                        <input type="text" id="protocoloJames" name="protocoloJames" placeholder="Número do protocolo James">
+                    </div>
+                    <div class="form-group">
+                        <label for="instrucao"><i class="fas fa-clipboard"></i> Instrução:</label>
+                        <textarea id="instrucao" name="instrucao" rows="2" placeholder="Ex: 'Comprar poste', 'Cuidado cachorro bravo', 'gere sem o telefone'"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="limparBtn" class="btn btn-secondary"><i class="fas fa-broom"></i> Limpar</button>
+                        <button type="button" id="corrigirCamposBtn" class="btn btn-secondary"><i class="fas fa-wand-magic-sparkles"></i> Corrigir Campos com Audinha IA</button>
+                        <button type="button" id="copiarChamadoBtn" class="btn btn-primary"><i class="fas fa-copy"></i> Copiar Chamado</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+                <section class="resumo-section">
+            <div class="resumo-card">
+                <h2><i class="fas fa-calendar-check"></i> Resumo de Agenda</h2>
+                <p style="text-align:center;color:var(--text-muted);font-size:0.75rem;margin-bottom:15px;margin-top:-10px;">
+                    Formato: (Código) Nome ▪️ Local ▪️ Falha ▪️ Telefone ▪️ Protocolo
+                </p>
+                <div class="resumo-content" id="resumoContent">
+                    <p class="placeholder">Preencha os dados acima e clique em "Gerar Resumo" para criar o resumo automático</p>
+                </div>
+                <div class="resumo-actions">
+                    <button type="button" id="gerarResumoBtn" class="btn btn-secondary"><i class="fas fa-wand-magic-sparkles"></i> Gerar Resumo com Audinha IA</button>
+                    <button type="button" id="copiarResumoBtn" class="btn btn-primary" disabled><i class="fas fa-copy"></i> Copiar Resumo</button>
+                </div>
+            </div>
+        </section>
+                <section class="ultimo-script-section" id="ultimoScriptSection" style="display:none">
+            <div class="ultimo-script-card">
+                <h2><i class="fas fa-history"></i> Último Script <span class="recovery-badge">RECUPERAR</span></h2>
+                <div class="ultimo-script-info" id="ultimoScriptInfo">
+                    <p class="script-timestamp" id="scriptTimestamp"></p>
+                </div>
+                <div class="ultimo-script-content" id="ultimoScriptContent"></div>
+                <div class="ultimo-script-actions">
+                    <button type="button" id="recuperarScriptBtn" class="btn btn-primary"><i class="fas fa-undo"></i> Recuperar Script</button>
+                    <button type="button" id="copiarUltimoBtn" class="btn btn-secondary"><i class="fas fa-copy"></i> Copiar</button>
+                    <button type="button" id="descartarUltimoBtn" class="btn btn-danger"><i class="fas fa-trash"></i> Descartar</button>
+                </div>
+            </div>
+        </section>
+            </div>
+
+            <div id="script-tab" class="screen" style="display:none;">
+                
+            <div class="tutorial-header">
+                <div class="tutorial-header-top">
+                    <div class="tut-icon"><i class="fas fa-message"></i></div>
+                    <div class="tut-title-block">
+                        <h2>Script para o Cliente</h2>
+                        <p>Mensagem padrão para solicitar dados de envio técnico</p>
+                    </div>
+                </div>
+            </div>
+
+                <section class="script-section">
+            <div class="script-card">
+                <h2><i class="fas fa-message"></i> Script para o Cliente</h2>
+                <div class="script-content" id="scriptCliente">
+                    <p>Será necessário envio técnico. Pode me informar os dados abaixo, por gentileza?</p>
+                    <br>
+                    <p>▪️ Telefone de quem irá receber o técnico:</p>
+                    <p>▪️ Disponibilidade para os próximos dois dias comerciais:</p>
+                    <p>▪️ Nome da pessoa que irá receber o técnico:</p>
+                    <p>▪️ Endereço atualizado (preferencialmente com link do Google Maps):</p>
+                    <br>
+                    <p>Assim que receber essas informações, sigo com o agendamento da visita técnica. Fico no aguardo!</p>
+                </div>
+                <div class="script-actions">
+                    <button type="button" id="editarScriptBtn" class="btn btn-secondary"><i class="fas fa-edit"></i> Editar</button>
+                    <button type="button" id="copiarScriptBtn" class="btn btn-primary"><i class="fas fa-copy"></i> Copiar Script</button>
+                </div>
+            </div>
+        </section>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Modal Como Copiar (HUBSOFT / JAMES) -->
+    <div id="howToModal" class="modal">
+        <div class="modal-content" style="max-width:600px">
+            <div class="modal-header">
+                <h3 id="howToTitle"><i class="fas fa-circle-question"></i> Como copiar</h3>
+                <span class="close" id="closeHowToModal">&times;</span>
+            </div>
+            <div class="modal-body" style="text-align:center">
+                <img id="howToImg" src="" alt="Instrução" style="max-width:100%;border-radius:8px;margin-bottom:12px">
+                <p id="howToCaption" style="color:var(--text-muted);font-size:0.875rem"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Seleção de Contratos -->
+    <div id="contractsModal" class="modal">
+        <div class="modal-content" style="max-width:500px">
+            <div class="modal-header">
+                <h3><i class="fas fa-list-check"></i> Selecione o Contrato</h3>
+                <span class="close" id="closeContractsModal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px">Este cliente possui múltiplos serviços. Qual será o chamado?</p>
+                <div id="contractsList" style="display:flex;flex-direction:column;gap:8px"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Edição do Script -->
+        <div id="editModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-edit"></i> Editar Script</h3>
+                    <span class="close" id="closeModal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <textarea id="scriptEditor" rows="10"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" id="cancelarEdicaoBtn" class="btn btn-secondary"><i class="fas fa-times"></i> Cancelar</button>
+                    <button type="button" id="salvarEdicaoBtn" class="btn btn-primary"><i class="fas fa-save"></i> Salvar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div id="toast" class="toast">
+            <i class="fas fa-check-circle"></i>
+            <span id="toastMessage">Copiado!</span>
+        </div>
+    
+    <script src="js/app.js"></script>
+    <script>
+        function selectTab(btn) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function showSection(sectionId) {
+            document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+            const target = document.getElementById(sectionId);
+            if (target) target.style.display = 'block';
+        }
+
+        // Carrega as configs de IA do Firestore (Gemini → GPT → Local)
+        window.loadGeminiConfig = async function() {
+            try {
+                const [gSnap, oSnap, lSnap] = await Promise.all([
+                    db.collection('config').doc('gemini-api-key').get(),
+                    db.collection('config').doc('openai-api-key').get(),
+                    db.collection('config').doc('api-url-interna').get()
+                ]);
+                window._aiConfigs = {
+                    gemini: gSnap.exists  ? (gSnap.data().value  || null) : null,
+                    openai: oSnap.exists  ? (oSnap.data().value  || null) : null,
+                    local:  lSnap.exists  ? (lSnap.data().value  || null) : null
+                };
+                const temAlguma = window._aiConfigs.gemini || window._aiConfigs.openai || window._aiConfigs.local;
+                if (temAlguma) {
+                    window.CHAT_API_CONFIG = { available: true };
+                    return true;
+                }
+                console.warn('Nenhuma chave de IA configurada no Firestore');
+                return false;
+            } catch (e) {
+                console.warn('Erro ao carregar configs de IA:', e.message);
+                return false;
+            }
+        }
+
+        // Chama a IA com fallback automático: Gemini → GPT → Local
+        window.chatAI = async function(prompt) {
+            if (!window._aiConfigs) await window.loadGeminiConfig();
+            const c = window._aiConfigs || {};
+
+            // 1. Gemini
+            if (c.gemini) {
+                try {
+                    const res = await fetch(
+                        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'X-goog-api-key': c.gemini },
+                            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                        }
+                    );
+                    if (res.ok) {
+                        const data = await res.json();
+                        const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                        if (text) { window._aiProvider = 'Gemini'; return text; }
+                    }
+                } catch (e) { console.warn('Gemini falhou, tentando GPT...', e.message); }
+            }
+
+            // 2. OpenAI / GPT
+            if (c.openai) {
+                try {
+                    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.openai },
+                        body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }] })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const text = data.choices?.[0]?.message?.content?.trim();
+                        if (text) { window._aiProvider = 'GPT'; return text; }
+                    }
+                } catch (e) { console.warn('GPT falhou, tentando API local...', e.message); }
+            }
+
+            // 3. API Local (OpenAI-compatible, ex: Ollama, LM Studio)
+            if (c.local) {
+                try {
+                    const baseUrl = c.local.replace(/\/$/, '');
+                    const res = await fetch(baseUrl + '/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model: 'local', messages: [{ role: 'user', content: prompt }] })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const text = data.choices?.[0]?.message?.content?.trim();
+                        if (text) { window._aiProvider = 'Local'; return text; }
+                    }
+                } catch (e) { console.warn('API local falhou', e.message); }
+            }
+
+            return null;
+        }
+
+        window.loadGeminiConfig = loadGeminiConfig;
+        window.chatAI = chatAI;
+
+        requireAuth('sistema-chamados').then(async () => {
+            await loadGeminiConfig();
+            document.getElementById('appContent').style.display = 'flex';
+        });
+    </script>
+</body>
+</html>
