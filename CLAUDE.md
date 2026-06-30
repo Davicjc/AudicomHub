@@ -12,7 +12,13 @@
 | `admin` | lê e escreve em tudo, não pode apagar permanente |
 | `superadmin` | tudo, incluindo apagar permanentemente |
 
-## Padrão de segurança por projeto (OBRIGATÓRIO)
+## Modelo de segurança
+
+**Firebase Rules**: qualquer usuário autenticado (login + senha) tem acesso total ao Firestore. Não há restrição por role no banco.
+
+**UI (HTML/JS)**: as restrições de role (user/admin/superadmin) são aplicadas **apenas visualmente** — mostrando ou ocultando botões no HTML. Funções JS **não** devem ter `if (!window._isAdmin) return;` no corpo.
+
+## Padrão de projeto (OBRIGATÓRIO)
 
 Todo projeto novo deve seguir este padrão — já aplicado em `suporte-roteadores` e `suporte-operacoes`.
 
@@ -24,15 +30,9 @@ Todo projeto novo deve seguir este padrão — já aplicado em `suporte-roteador
 
 ### Firebase Rules (template)
 ```
-// Projeto: qualquer usuário com acesso pode ler e escrever
-match /projetos/{nome-projeto}/{document=**} {
-  allow read, write: if hasProjectAccess('{nome-projeto}');
-}
-
-// Lixeira: create/read/update para usuários com acesso; delete só superadmin
-match /lixeira-{nome-projeto}/{docId} {
-  allow read, create, update: if hasProjectAccess('{nome-projeto}');
-  allow delete: if isSuperAdmin();
+// Regra global: qualquer autenticado pode ler e escrever tudo
+match /{document=**} {
+  allow read, write: if request.auth != null;
 }
 ```
 
@@ -62,15 +62,13 @@ requireAuth('nome-projeto').then(({ user, userData }) => {
 });
 ```
 
-### UI: botões de ação por permissão
-- **Adicionar** (novo item, conteúdo, ou nova aba/tutorial): todos os usuários com acesso — sem condicional. `criadoPor: window._userEmail` obrigatório
-- **Reordenar cards/itens** (↑↓ dentro de uma aba): todos os usuários com acesso — sem condicional
-- **Editar conteúdo existente**: `window._isAdmin`
-- **Reordenar abas/seções** (ordem da navegação lateral): `window._isAdmin`
-- **Lixeira (soft-delete)**: todos os usuários com acesso — sem condicional
-- **Apagar permanente (na lixeira)**: `window._isSuperAdmin`
-
-> **Nota:** funções de editar e reordenar estrutura devem ter `if (!window._isAdmin) return;` no corpo além de ocultar o botão na UI (defesa em profundidade).
+### UI: botões de ação por permissão (apenas visual — sem guards JS no corpo da função)
+- **Adicionar** (novo item, conteúdo, ou nova aba/tutorial): todos os usuários — sem condicional. `criadoPor: window._userEmail` obrigatório
+- **Reordenar cards/itens** (↑↓ dentro de uma aba): todos os usuários — sem condicional
+- **Editar conteúdo existente**: mostrar botão apenas se `window._isAdmin` (mas sem `return` no corpo da função)
+- **Reordenar abas/seções** (ordem da navegação lateral): mostrar botão apenas se `window._isAdmin`
+- **Lixeira (soft-delete)**: todos os usuários — sem condicional
+- **Apagar permanente (na lixeira)**: mostrar botão apenas se `window._isSuperAdmin`
 
 ### Ordem obrigatória no soft-delete
 Sempre gravar na lixeira **PRIMEIRO**, depois marcar `deletado: true` no doc original:

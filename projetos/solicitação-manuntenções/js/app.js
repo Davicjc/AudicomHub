@@ -575,7 +575,6 @@ function limparBusca() {
 
 // =================== MODAL DE AÇÃO ADMINISTRATIVA ===================
 function abrirModalAcao(solicitacaoId, acao) {
-    if (!window._isAdmin) return;
     currentSolicitacaoId = solicitacaoId;
     currentModalAction = acao;
     currentModalMode = 'action';
@@ -600,7 +599,6 @@ function abrirModalAcao(solicitacaoId, acao) {
 }
 
 function abrirModalEdicao(solicitacaoId, statusAtual) {
-    if (!window._isAdmin) return;
     currentSolicitacaoId = solicitacaoId;
     currentModalMode = 'edit';
     currentModalAction = null;
@@ -721,7 +719,6 @@ async function enviarComentarioSolicitante() {
 }
 
 async function confirmarAcao() {
-    if (!window._isAdmin) return;
     try {
         const novoStatus = currentModalMode === 'edit'
             ? document.getElementById('edit-status-select').value
@@ -792,7 +789,6 @@ function extrairImagemDoCorpo(corpo) {
 }
 
 async function enviarComentario() {
-    if (!window._isAdmin) return;
     const texto = document.getElementById('novo-comentario').value.trim();
     const temImagem = !!window._imagemBase64ComAdm;
 
@@ -901,8 +897,6 @@ document.addEventListener('keydown', function (e) {
 let exportRangeMode = 'all';
 
 function abrirModalExportar() {
-    if (!window._isAdmin) { showToast('warning', 'Sem permissão para exportar dados'); return; }
-
     exportRangeMode = 'all';
     document.querySelectorAll('.export-quick-btn').forEach(b => b.classList.remove('active'));
     const allBtn = document.querySelector('.export-quick-btn[data-range="all"]');

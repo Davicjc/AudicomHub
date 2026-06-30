@@ -3,114 +3,20 @@ rules_version = '2';
 // ================================================================
 // AUDICOM HUB — Regras de Segurança Firestore
 //
-// Estrutura das coleções:
-//   users/{uid}                   → dados e permissões do usuário
-//   config/{chave}                → configurações globais (API keys, etc.)
-//   projetos-lista/{id}           → lista de projetos exibida no hub
-//   projetos/{projectId}/abas/{id}               → abas de cada projeto
-//   projetos/{projectId}/abas/{id}/imagens/{id}  → imagens (base64)
+// Modelo: qualquer usuário autenticado (login + senha) tem acesso
+// total ao sistema. Restrições por role (user/admin/superadmin)
+// são aplicadas apenas na UI/HTML — não no Firestore.
 // ================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Funções auxiliares ──────────────────────────
     function isAuth() {
       return request.auth != null;
     }
 
-    function userData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function isSuperAdmin() {
-      return isAuth() && userData().role == 'superadmin';
-    }
-
-    function isAdmin() {
-      return isAuth() && (userData().role == 'admin' || userData().role == 'superadmin');
-    }
-
-    function hasProjectAccess(projectId) {
-      let u = userData();
-      return isAuth() && (
-        u.role == 'superadmin' ||
-        u.role == 'admin' ||
-        (u.get('projects', {}).get(projectId, false) == true)
-      );
-    }
-
-    // ── users ───────────────────────────────────────
-    // Usuário lê o próprio doc ou admins leem todos.
-    // Criação: o próprio usuário (primeiro login).
-    // Edição: admins editam qualquer campo; usuário edita
-    //         apenas campos permitidos (não role, não projects).
-    // Exclusão: apenas superadmin.
-
-    match /users/{userId} {
-      allow read: if isAuth() && (request.auth.uid == userId || isAdmin());
-
-      allow create: if isSuperAdmin()
-        || (isAdmin() && request.resource.data.role == 'user')
-        || (isAuth() && request.auth.uid == userId
-            && request.resource.data.role == 'user');
-
-      allow update: if isAdmin()
-        || (isAuth() && request.auth.uid == userId
-            && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['role', 'projects']));
-
-      allow delete: if isSuperAdmin();
-    }
-
-    // ── config ──────────────────────────────────────
-    // Qualquer usuário autenticado lê; apenas admins escrevem.
-
-    match /config/{configId} {
-      allow read:  if isAuth();
-      allow write: if isAdmin();
-    }
-
-    // ── projetos-lista ─────────────────────────────
-    // Todos autenticados leem; apenas admins gerenciam.
-
-    match /projetos-lista/{projectId} {
-      allow read:  if isAuth();
-      allow write: if isAdmin();
-    }
-
-    // ── projetos (conteúdo) ─────────────────────────
-    // Leitura: usuário com acesso ao projeto.
-    // Escrita: apenas admins.
-
-    match /projetos/{projectId}/{document=**} {
-      allow read:  if hasProjectAccess(projectId);
-      allow write: if isAdmin();
-    }
-
-    // suporte-roteadores: qualquer usuário com acesso pode escrever
-    // (soft-delete remove do original, restore recria — ambos precisam de write)
-    match /projetos/suporte-roteadores/{document=**} {
-      allow read, write: if hasProjectAccess('suporte-roteadores');
-    }
-
-    // lixeira-roteadores: criação/leitura/update para usuários com acesso
-    // deleção permanente apenas superadmin
-    match /lixeira-roteadores/{docId} {
-      allow read, create, update: if hasProjectAccess('suporte-roteadores');
-      allow delete: if isSuperAdmin();
-    }
-
-    // suporte-operacoes: qualquer usuário com acesso pode escrever
-    match /projetos/suporte-operacoes/{document=**} {
-      allow read, write: if hasProjectAccess('suporte-operacoes');
-    }
-
-    // lixeira-operacoes: criação/leitura/update para usuários com acesso
-    // deleção permanente apenas superadmin
-    match /lixeira-operacoes/{docId} {
-      allow read, create, update: if hasProjectAccess('suporte-operacoes');
-      allow delete: if isSuperAdmin();
+    match /{document=**} {
+      allow read, write: if isAuth();
     }
   }
 }

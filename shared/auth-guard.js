@@ -32,16 +32,6 @@ async function requireAuth(projectId = null) {
         }
 
         const userData = { id: user.uid, ...snap.data() };
-        const isSuperAdmin = userData.role === 'superadmin';
-        const isAdmin      = userData.role === 'admin';
-
-        if (projectId && !isSuperAdmin && !isAdmin) {
-          const hasAccess = userData.projects && userData.projects[projectId] === true;
-          if (!hasAccess) {
-            window.location.href = SITE_ROOT + 'hub.html';
-            return;
-          }
-        }
 
         resolve({ user, userData });
       } catch (err) {

@@ -246,7 +246,6 @@ function abrirModalNovaAba() {
 }
 
 function editarAba(id) {
-    if (!window._isAdmin) return;
     const aba = abasCarregadas.find(a => a.id === id);
     if (!aba) return;
     _editAbaId = id;
@@ -431,7 +430,6 @@ function _addKit(bi)        { _editorBlocks[bi].kits.push({ title:'', items:['']
 function _removeKit(bi, ki) { _editorBlocks[bi].kits.splice(ki, 1); _renderBlockEditor(); }
 
 function editarConteudoTexto(id) {
-    if (!window._isAdmin) return;
     _editTextAbaId = id;
     const aba = abasCarregadas.find(a => a.id === id);
     _editorBlocks = aba?.textBlocks ? JSON.parse(JSON.stringify(aba.textBlocks)) : [];
@@ -559,7 +557,6 @@ async function salvarImagensAdmin() {
 let _editStepAbaId = null, _editStepId = null, _editStepPendingBase64 = null;
 
 async function editarStep(abaId, stepId) {
-    if (!window._isAdmin) return;
     const snap = await PROJ_COL().doc(abaId).collection('steps').doc(stepId).get();
     if (!snap.exists) return;
     const s = snap.data();
@@ -780,7 +777,6 @@ async function moverStep(abaId, stepId, dir) {
 
 // ── Reordenar abas ────────────────────────────────────────────
 async function moverAba(id, dir) {
-    if (!window._isAdmin) return;
     const idx     = abasCarregadas.findIndex(a => a.id === id);
     const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
     if (swapIdx < 0 || swapIdx >= abasCarregadas.length) return;
