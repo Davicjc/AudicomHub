@@ -347,6 +347,63 @@ body {
 }
 
 /* ============================================================
+   BARRA DE PESQUISA
+   ============================================================ */
+.links-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: 22px;
+}
+
+.links-search > i.fa-search {
+    position: absolute;
+    left: 15px;
+    color: var(--text-3);
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.links-search input {
+    width: 100%;
+    padding: 11px 40px 11px 40px;
+    border-radius: 10px;
+    border: 1px solid var(--border-md);
+    background: var(--surface, rgba(255,255,255,0.03));
+    color: var(--text-1);
+    font-family: inherit;
+    font-size: 14px;
+    transition: var(--ease);
+}
+
+.links-search input::placeholder { color: var(--text-3); }
+
+.links-search input:focus {
+    outline: none;
+    border-color: var(--border-hover);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.links-search-clear {
+    position: absolute;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    border-radius: 7px;
+    font-size: 13px;
+    transition: var(--ease);
+}
+
+.links-search-clear:hover { color: var(--primary-lt); background: rgba(99,102,241,0.12); }
+
+/* ============================================================
    GRID DE LINKS
    ============================================================ */
 .links-grid {

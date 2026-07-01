@@ -7,6 +7,7 @@ const LIXEIRA_REF = () => db.collection('lixeira-links');
 let abasCarregadas = [];
 let abaAtiva = null;
 let _currentLinks = []; // links da aba ativa em memória (para reordenar)
+let _searchTerm = '';   // termo de busca da aba ativa
 
 // ── Segurança: escape ─────────────────────────────────────────
 function escapeHTML(str) {
@@ -120,16 +121,51 @@ async function selecionarAba(id) {
     }
 
     _currentLinks = links;
+    _searchTerm = '';
 
     if (!links.length) {
         mainEl.innerHTML = `${header}<div class="empty-links"><i class="fas fa-link"></i><p>Nenhum link nesta aba ainda.<br>Clique em <strong>"Adicionar Link"</strong>.</p></div>`;
         return;
     }
 
-    const cards = links.map((l, i) => {
+    const searchBar = `
+        <div class="links-search">
+            <i class="fas fa-search"></i>
+            <input type="text" id="linksSearchInput" placeholder="Pesquisar por título, descrição ou link..."
+                   oninput="filtrarLinks('${id}', this.value)" autocomplete="off">
+            <button class="links-search-clear" onclick="limparBuscaLinks('${id}')" title="Limpar"><i class="fas fa-times"></i></button>
+        </div>`;
+
+    mainEl.innerHTML = `${header}${searchBar}<div class="links-grid" id="linksGrid"></div>`;
+    renderizarGridLinks(id);
+}
+
+// Renderiza (ou re-renderiza filtrando) o grid de links da aba ativa
+function renderizarGridLinks(abaId) {
+    const grid = document.getElementById('linksGrid');
+    if (!grid) return;
+
+    const termo = _searchTerm.trim().toLowerCase();
+    // Filtro por título, descrição e conteúdo do link (URL)
+    const visiveis = !termo ? _currentLinks : _currentLinks.filter(l =>
+        (l.titulo    || '').toLowerCase().includes(termo) ||
+        (l.descricao || '').toLowerCase().includes(termo) ||
+        (l.url       || '').toLowerCase().includes(termo)
+    );
+
+    if (!visiveis.length) {
+        grid.style.display = 'block';
+        grid.innerHTML = `<div class="empty-links"><i class="fas fa-magnifying-glass"></i><p>Nenhum link encontrado para <strong>"${escapeHTML(_searchTerm.trim())}"</strong>.</p></div>`;
+        return;
+    }
+    grid.style.display = '';
+
+    grid.innerHTML = visiveis.map(l => {
         const href  = normalizarUrl(l.url);
         const host  = hostDaUrl(l.url);
-        const first = i === 0, last = i === links.length - 1;
+        // Posição no array completo (para reordenar corretamente mesmo filtrando)
+        const pos   = _currentLinks.findIndex(x => x.id === l.id);
+        const first = pos === 0, last = pos === _currentLinks.length - 1;
 
         const favicon = host
             ? `<img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64" alt="" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-link\\'></i>'">`
@@ -138,10 +174,10 @@ async function selecionarAba(id) {
         // Overlay: reordenar (todos) · editar (admin) · lixeira (todos)
         const overlay = `
             <div class="link-adm-overlay">
-                <button class="link-adm-btn" onclick="moverLink('${id}','${l.id}','up')"   title="Subir"  ${first ? 'disabled style="opacity:.3;cursor:default"' : ''}><i class="fas fa-arrow-up"></i></button>
-                <button class="link-adm-btn" onclick="moverLink('${id}','${l.id}','down')" title="Descer" ${last ? 'disabled style="opacity:.3;cursor:default"' : ''}><i class="fas fa-arrow-down"></i></button>
-                ${window._isAdmin ? `<button class="link-adm-btn" onclick="editarLink('${id}','${l.id}')" title="Editar"><i class="fas fa-pen"></i></button>` : ''}
-                <button class="link-adm-btn link-adm-del" onclick="deletarLink('${id}','${l.id}','${escaparAttr(l.titulo || 'Link')}')" title="Mover para lixeira"><i class="fas fa-trash"></i></button>
+                <button class="link-adm-btn" onclick="moverLink('${abaId}','${l.id}','up')"   title="Subir"  ${first ? 'disabled style="opacity:.3;cursor:default"' : ''}><i class="fas fa-arrow-up"></i></button>
+                <button class="link-adm-btn" onclick="moverLink('${abaId}','${l.id}','down')" title="Descer" ${last ? 'disabled style="opacity:.3;cursor:default"' : ''}><i class="fas fa-arrow-down"></i></button>
+                ${window._isAdmin ? `<button class="link-adm-btn" onclick="editarLink('${abaId}','${l.id}')" title="Editar"><i class="fas fa-pen"></i></button>` : ''}
+                <button class="link-adm-btn link-adm-del" onclick="deletarLink('${abaId}','${l.id}','${escaparAttr(l.titulo || 'Link')}')" title="Mover para lixeira"><i class="fas fa-trash"></i></button>
             </div>`;
 
         return `
@@ -159,8 +195,18 @@ async function selecionarAba(id) {
             ${l.criadoPor ? `<div class="link-autor">adicionado por ${escapeHTML(l.criadoPor)}</div>` : ''}
         </div>`;
     }).join('');
+}
 
-    mainEl.innerHTML = `${header}<div class="links-grid">${cards}</div>`;
+function filtrarLinks(abaId, valor) {
+    _searchTerm = valor || '';
+    renderizarGridLinks(abaId);
+}
+
+function limparBuscaLinks(abaId) {
+    _searchTerm = '';
+    const input = document.getElementById('linksSearchInput');
+    if (input) { input.value = ''; input.focus(); }
+    renderizarGridLinks(abaId);
 }
 
 // ============================================================
