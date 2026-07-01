@@ -69,14 +69,14 @@ function renderizarAbas() {
         const adm = document.createElement('div');
         adm.className = 'tab-adm-btns';
         const total = abasCarregadas.length;
-        let btns = '';
-        // Reordenar abas / editar aba: apenas admin (visual)
+        // Reordenar aba (mover posição): todos os usuários
+        let btns = `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','up')" title="Subir" ${idx === 0 ? 'disabled style="opacity:.3"' : ''}><i class="fas fa-arrow-up"></i></button>`
+                 + `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','down')" title="Descer" ${idx === total - 1 ? 'disabled style="opacity:.3"' : ''}><i class="fas fa-arrow-down"></i></button>`;
+        // Editar aba: apenas admin (visual)
         if (window._isAdmin) {
-            btns += `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','up')" title="Subir" ${idx === 0 ? 'disabled style="opacity:.3"' : ''}><i class="fas fa-arrow-up"></i></button>`
-                  + `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','down')" title="Descer" ${idx === total - 1 ? 'disabled style="opacity:.3"' : ''}><i class="fas fa-arrow-down"></i></button>`
-                  + `<button class="tab-adm-icon" onclick="editarAba('${aba.id}')" title="Editar"><i class="fas fa-pen"></i></button>`;
+            btns += `<button class="tab-adm-icon" onclick="editarAba('${aba.id}')" title="Editar"><i class="fas fa-pen"></i></button>`;
         }
-        // Lixeira: todos os usuários
+        // Lixeira (excluir): todos os usuários
         btns += `<button class="tab-adm-icon tab-adm-del" onclick="deletarAba('${aba.id}','${escaparAttr(aba.title)}')" title="Mover aba para lixeira"><i class="fas fa-trash"></i></button>`;
         adm.innerHTML = btns;
 
