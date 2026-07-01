@@ -122,3 +122,4 @@ lixeira-{projectId}/{id}          → itens deletados (soft-delete)
 | `projetos/suporte-operacoes` | `suporte-operacoes` | `lixeira-operacoes` |
 | `projetos/sistema-chamados` | `sistema-chamados` | (ainda sem lixeira) |
 | `projetos/solicitação-manuntenções` | `solicitação-manuntenções` | (ainda sem lixeira) |
+| `projetos/agregador-links` | `agregador-links` | `lixeira-links` |

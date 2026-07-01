@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agregador de Links - AUDICOM</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <script src="../../shared/firebase-init.js"></script>
+    <script src="../../shared/auth-guard.js"></script>
+</head>
+<body>
+
+    <div id="appContent" style="display:none">
+
+        <!-- ── Sidebar ─────────────────────────────────────── -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-row">
+                    <div class="sidebar-brand-icon"><i class="fas fa-link"></i></div>
+                    <h1>Agregador de Links</h1>
+                </div>
+                <p>Links úteis organizados por abas</p>
+            </div>
+
+            <nav id="tabsNav" class="sidebar-nav">
+                <div class="nav-section-label">Abas</div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="../../hub.html" class="sidebar-btn" style="text-decoration: none; text-align: center; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 10px;">
+                    <i class="fas fa-arrow-left"></i> Voltar ao Hub
+                </a>
+
+                <button onclick="window.location.reload(true)" class="sidebar-btn">
+                    <i class="fas fa-sync-alt"></i> Verificar Updates
+                </button>
+                <button onclick="abrirLixeiraLinks()" class="sidebar-btn s-danger">
+                    <i class="fas fa-trash-alt"></i> Lixeira
+                </button>
+                <button id="btnNovaAba" class="sidebar-btn s-primary">
+                    <i class="fas fa-plus"></i> Nova Aba
+                </button>
+            </div>
+        </aside>
+
+        <!-- ── Conteúdo ─────────────────────────────────────── -->
+        <main class="content-area" id="mainContent">
+            <div style="display:flex;align-items:center;justify-content:center;height:60vh;color:var(--text-3)">
+                <i class="fas fa-circle-notch fa-spin" style="font-size:24px"></i>
+            </div>
+        </main>
+
+    </div>
+
+    <!-- ── Modal: Nova / Editar Aba ──────────────────────────── -->
+    <div id="modalAba" class="modal-overlay">
+        <div class="modal-box">
+            <h3 id="modalAbaTitle"><i class="fas fa-plus"></i> Nova Aba</h3>
+            <div class="field">
+                <label>Título</label>
+                <input type="text" id="abaTitulo" placeholder="Ex: Ferramentas Internas">
+            </div>
+            <div class="field">
+                <label>Subtítulo (opcional)</label>
+                <input type="text" id="abaSubtitulo" placeholder="Breve descrição da aba">
+            </div>
+            <div class="field">
+                <label>Ícone (classe FontAwesome)</label>
+                <input type="text" id="abaIcone" placeholder="fas fa-folder" value="fas fa-folder">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="fecharModalAba()">Cancelar</button>
+                <button class="btn-save" onclick="salvarAba()"><i class="fas fa-save"></i> Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal: Novo / Editar Link ─────────────────────────── -->
+    <div id="modalLink" class="modal-overlay">
+        <div class="modal-box">
+            <h3 id="modalLinkTitle"><i class="fas fa-link"></i> Novo Link</h3>
+            <div class="field">
+                <label>Título</label>
+                <input type="text" id="linkTitulo" placeholder="Ex: Painel Hubsoft">
+            </div>
+            <div class="field">
+                <label>URL</label>
+                <input type="text" id="linkUrl" placeholder="https://exemplo.com.br">
+            </div>
+            <div class="field">
+                <label>Descrição</label>
+                <textarea id="linkDescricao" rows="3" placeholder="Para que serve este link..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="fecharModalLink()">Cancelar</button>
+                <button class="btn-save" onclick="salvarLink()"><i class="fas fa-save"></i> Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal: Lixeira ────────────────────────────────────── -->
+    <div id="modalLixeira" class="modal-overlay">
+        <div class="modal-box" style="max-width:560px;display:flex;flex-direction:column;padding-bottom:20px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-shrink:0">
+                <h3 style="margin:0"><i class="fas fa-trash-alt" style="color:#ef4444"></i> Lixeira — Links</h3>
+                <button class="modal-close" onclick="fecharLixeiraLinks()"><i class="fas fa-times"></i></button>
+            </div>
+            <p style="font-size:12px;color:var(--text-3);margin:0 0 16px;flex-shrink:0">Qualquer usuário pode restaurar. Apenas o super admin pode apagar permanentemente.</p>
+            <div id="lixeiraContent" style="overflow-y:auto;flex:1;max-height:60vh"></div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        requireAuth('agregador-links').then(({ user, userData }) => {
+            window._isAdmin      = userData.role === 'superadmin' || userData.role === 'admin';
+            window._isSuperAdmin = userData.role === 'superadmin';
+            window._userEmail    = user.email;
+            document.getElementById('appContent').style.display = 'flex';
+            // Nova Aba: todos os usuários podem criar (apenas visual — sem guard no corpo)
+            document.getElementById('btnNovaAba').addEventListener('click', abrirModalNovaAba);
+            iniciarLinks();
+        });
+    </script>
+</body>
+</html>
