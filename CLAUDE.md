@@ -28,7 +28,8 @@ users/{uid}.permissions = {
   'suporte-roteadores':      { adicionar, editar, moverLixeira, restaurar, apagarPermanente },
   'suporte-operacoes':       { adicionar, editar, reordenarItens, reordenarAbas, moverLixeira, restaurar, apagarPermanente, migrar },
   'agregador-links':         { adicionar, editar, reordenarItens, reordenarAbas, moverLixeira, restaurar, apagarPermanente },
-  'solicitacao-manutencoes': { criar, painelAdm }
+  'solicitacao-manutencoes': { criar, painelAdm },
+  'ronda-callink':           { visualizar, registrarRonda, editar, gerenciarLocais, gerenciarProdutos, gerenciarClientes, moverLixeira, restaurar, apagarPermanente }
 }
 ```
 Regras do resolver:
@@ -152,6 +153,17 @@ projetos/{projectId}/...          → conteúdo de cada projeto
 lixeira-{projectId}/{id}          → itens deletados (soft-delete)
 ```
 
+**Ronda Callink** (projectId `ronda-callink`) — usa coleções top-level próprias (não `projetos/…`):
+```
+ronda-callink-locais/{id}                    → { nome, endereco, contato, intervaloRondaDias(15), observacoes, ativo }
+ronda-callink-locais/{id}/catracas/{id}      → equipamentos fixos do local { nome, tipo, ativa }
+ronda-callink-produtos/{id}                  → catálogo de peças { nome, categoria, codigo, fotoBase64(reduzida ~500px) }
+ronda-callink-rondas/{id}                    → registro leve { localId, tecnico*, dataRonda, localVisto, piso, catracas[], pecasTrocadas[], demaisInfos, nFotos }
+ronda-callink-rondas/{id}/fotos/{id}         → 1 foto por doc { base64(~1024px), secao, legenda } (evita estourar 1MB/doc)
+lixeira-ronda-callink/{id}                   → { tipoItem:'ronda'|'local'|'produto', refId, titulo, restaurado }
+```
+Cliente externo (somente leitura, vê só os locais vinculados): `users/{uid}.rondaCallinkCliente=true` + `users/{uid}.rondaCallinkLocais=[localId]`, gravados na aba "Acessos de Clientes" do próprio projeto. Imagens são reduzidas via canvas (`comprimirImagem` em `js/app.js`) antes de virar base64. **Restrição por local é só de UI** enquanto as rules do Firebase não forem endurecidas para este projeto.
+
 **Categorias de usuários** (admin.html): filtros `Todos` (todos) e `Genérica` (sem categoria) são virtuais; as demais vêm de `categorias-usuarios`. Admins/superadmins seguem a mesma lógica de categoria dos usuários comuns (aparecem no setor atribuído ou em `Genérica`). Excluir uma categoria devolve seus usuários para Genérica (limpa `users/{uid}.categoria` em batch).
 
 ## Projetos existentes
@@ -162,3 +174,4 @@ lixeira-{projectId}/{id}          → itens deletados (soft-delete)
 | `projetos/sistema-chamados` | `sistema-chamados` | (ainda sem lixeira) |
 | `projetos/solicitação-manuntenções` | `solicitação-manuntenções` | (ainda sem lixeira) |
 | `projetos/agregador-links` | `agregador-links` | `lixeira-links` |
+| `projetos/ronda-callink` | `ronda-callink` | `lixeira-ronda-callink` |

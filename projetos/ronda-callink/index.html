@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ronda Callink - AUDICOM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <script src="../../shared/firebase-init.js"></script>
+    <script src="../../shared/auth-guard.js"></script>
+    <script src="../../shared/permissions.js"></script>
+</head>
+<body>
+
+    <div id="appContent" style="display:none">
+
+        <!-- ── Sidebar ─────────────────────────────────────── -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-row">
+                    <div class="sidebar-brand-icon"><i class="fas fa-map-marker-alt"></i></div>
+                    <h1>Ronda Callink</h1>
+                </div>
+                <p>Rondas técnicas em campo</p>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section-label">Painel</div>
+                <div class="tab-wrapper">
+                    <button class="tab-btn active" data-view="dashboard" onclick="irPara('dashboard')">
+                        <div class="nav-icon"><i class="fas fa-chart-line"></i></div>
+                        <span>Dashboard</span>
+                    </button>
+                </div>
+
+                <div class="nav-section-label">Registros</div>
+                <div class="tab-wrapper">
+                    <button class="tab-btn" data-view="rondas" onclick="irPara('rondas')">
+                        <div class="nav-icon"><i class="fas fa-clipboard-check"></i></div>
+                        <span>Rondas</span>
+                    </button>
+                </div>
+
+                <div class="nav-section-label" id="labelCadastros" style="display:none">Cadastros</div>
+                <div class="tab-wrapper" id="navLocais" style="display:none">
+                    <button class="tab-btn" data-view="locais" onclick="irPara('locais')">
+                        <div class="nav-icon"><i class="fas fa-building"></i></div>
+                        <span>Locais</span>
+                    </button>
+                </div>
+                <div class="tab-wrapper" id="navProdutos" style="display:none">
+                    <button class="tab-btn" data-view="produtos" onclick="irPara('produtos')">
+                        <div class="nav-icon"><i class="fas fa-box"></i></div>
+                        <span>Produtos / Peças</span>
+                    </button>
+                </div>
+                <div class="tab-wrapper" id="navClientes" style="display:none">
+                    <button class="tab-btn" data-view="clientes" onclick="irPara('clientes')">
+                        <div class="nav-icon"><i class="fas fa-user-shield"></i></div>
+                        <span>Acessos de Clientes</span>
+                    </button>
+                </div>
+
+                <div class="nav-section-label" id="labelFerramentas" style="display:none">Ferramentas</div>
+                <div class="tab-wrapper" id="navLixeira" style="display:none">
+                    <button class="tab-btn tab-danger" data-view="lixeira" onclick="irPara('lixeira')">
+                        <div class="nav-icon"><i class="fas fa-trash-alt"></i></div>
+                        <span>Lixeira</span>
+                    </button>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-user" id="sidebarUser"></div>
+                <a href="../../hub.html" class="sidebar-btn sidebar-btn--back">
+                    <i class="fas fa-arrow-left"></i> Voltar ao Hub
+                </a>
+                <button onclick="window.location.reload(true)" class="sidebar-btn">
+                    <i class="fas fa-sync-alt"></i> Atualizar
+                </button>
+            </div>
+        </aside>
+
+        <!-- ── Conteúdo ─────────────────────────────────────── -->
+        <main class="content-area">
+            <div id="viewRoot"></div>
+        </main>
+    </div>
+
+    <!-- Loading inicial -->
+    <div id="bootLoading" class="boot-loading"><div class="spinner"></div></div>
+
+    <!-- Notificação -->
+    <div id="notification" class="notification"><i class="fas fa-check-circle"></i> <span></span></div>
+
+    <!-- Container de modais (preenchido pelo app.js) -->
+    <div id="modalRoot"></div>
+
+    <script src="js/app.js"></script>
+    <script>
+        requireAuth('ronda-callink').then(({ user, userData }) => {
+            window._isAdmin          = userData.role === 'superadmin' || userData.role === 'admin';
+            window._isSuperAdmin     = userData.role === 'superadmin';
+            window._userUid          = user.uid;
+            window._userEmail        = user.email;
+            window._userNome         = userData.name || user.email;
+            window._can              = resolverPermissoes(userData, 'ronda-callink');
+            window._isClienteExterno = userData.rondaCallinkCliente === true;
+            window._locaisCliente    = Array.isArray(userData.rondaCallinkLocais) ? userData.rondaCallinkLocais : [];
+
+            // Cliente externo = somente leitura, restrito aos locais vinculados.
+            if (window._isClienteExterno) window._can = { visualizar: true };
+
+            document.getElementById('bootLoading').style.display = 'none';
+            document.getElementById('appContent').style.display = 'flex';
+
+            if (typeof iniciarApp === 'function') iniciarApp();
+        });
+    </script>
+</body>
+</html>

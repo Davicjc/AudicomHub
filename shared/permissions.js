@@ -38,6 +38,17 @@ const PERMISSOES_CATALOGO = {
     criar:            { label: 'Criar solicitação',         default: true  },
     painelAdm:        { label: 'Ver painel administrativo', default: false, legado: 'adminProjects' }
   },
+  'ronda-callink': {
+    visualizar:        { label: 'Visualizar rondas e dashboard', default: true  },
+    registrarRonda:    { label: 'Registrar rondas',              default: true  },
+    editar:            { label: 'Editar rondas',                 default: false },
+    gerenciarLocais:   { label: 'Cadastrar locais e catracas',   default: false },
+    gerenciarProdutos: { label: 'Cadastrar produtos/peças',      default: false },
+    gerenciarClientes: { label: 'Gerenciar acessos de clientes', default: false },
+    moverLixeira:      { label: 'Apagar: mover p/ lixeira',      default: true  },
+    restaurar:         { label: 'Restaurar da lixeira',          default: true  },
+    apagarPermanente:  { label: 'Apagar: permanentemente',       default: false, implica: ['moverLixeira'] }
+  },
   'sistema-chamados': {} // sem opções granulares — só acesso sim/não
 };
 
