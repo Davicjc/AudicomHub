@@ -18,6 +18,8 @@
 
 **Não recriar doc de usuário no cliente**: `index.html` (login) e `requireAuth`/`requireAdmin` (`shared/auth-guard.js`) **nunca** devem auto-criar `users/{uid}` — isso ressuscitaria usuários excluídos. Se o doc não existir ou `bloqueado === true`, fazer `auth.signOut()` e mandar para `index.html?bloqueado=1`. Contas são criadas **apenas** pelo admin (`admin.html` via app secundário).
 
+**Portão de acesso no `index.html`**: o `onAuthStateChanged` do index **nunca** deve redirecionar cegamente ao hub (`if (user) location='hub.html'`). Ele precisa verificar o doc (`exists` + `!bloqueado`) **antes** de ir ao hub; se inválido, `signOut()` e permanecer no login. Sem essa checagem, um usuário excluído/bloqueado entra em loop index↔hub (index manda pro hub → guard desloga → volta pro index → repete), queimando leituras do Firestore. Usa a flag `_checandoAcesso` para não reprocessar.
+
 **UI (HTML/JS)**: as restrições de role e de permissões granulares são aplicadas **apenas visualmente** — mostrando ou ocultando botões no HTML. Funções JS **não** devem ter `if (!window._isAdmin) return;` no corpo. (Única exceção documentada: o guard de navegação `showSection('admin-section')` em solicitação-manutenções.)
 
 ## Permissões granulares (`window._can`)

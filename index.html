@@ -137,11 +137,39 @@
   <div class="toast" id="_toast"></div>
 
   <script>
-    auth.onAuthStateChanged(user => {
-      if (user) window.location.href = 'hub.html';
+    let _checandoAcesso = false;
+
+    function mostrarErroLogin(msg) {
+      const errEl = document.getElementById('loginError');
+      if (errEl) { errEl.textContent = msg; errEl.style.display = 'block'; }
+      const btn = document.getElementById('loginBtn');
+      if (btn) { btn.disabled = false; btn.textContent = 'Entrar'; }
+    }
+
+    // Portão único de acesso: decide o destino de QUALQUER sessão ativa.
+    // Verifica o doc do usuário ANTES de ir ao hub — nunca envia um usuário
+    // excluído/bloqueado. É isso que quebra o loop index↔hub que ficava
+    // deslogando/relogando e queimando leituras do Firestore.
+    auth.onAuthStateChanged(async (user) => {
+      if (!user || _checandoAcesso) return;
+      _checandoAcesso = true;
+      try {
+        const snap = await db.collection('users').doc(user.uid).get();
+        if (!snap.exists || snap.data().bloqueado === true) {
+          await auth.signOut();
+          _checandoAcesso = false;
+          mostrarErroLogin('Sua conta foi removida ou bloqueada. Fale com o administrador.');
+          return; // permanece na tela de login — NÃO redireciona ao hub
+        }
+        window.location.href = 'hub.html';
+      } catch (err) {
+        await auth.signOut();
+        _checandoAcesso = false;
+        mostrarErroLogin('Não foi possível verificar seu acesso. Tente novamente.');
+      }
     });
 
-    // Aviso ao ser deslogado por conta removida/bloqueada
+    // Aviso ao ser deslogado por conta removida/bloqueada (redirect do guard)
     if (new URLSearchParams(location.search).get('bloqueado') === '1') {
       const errEl = document.getElementById('loginError');
       if (errEl) {
@@ -163,23 +191,11 @@
       btn.textContent = 'Entrando…';
 
       try {
-        const { user } = await auth.signInWithEmailAndPassword(email, senha);
-
-        // Só entra quem é membro ativo: doc existente e não bloqueado.
-        // Nunca criar o doc aqui — contas são criadas apenas pelo admin;
-        // recriar ressuscitaria usuários excluídos.
-        const snap = await db.collection('users').doc(user.uid).get();
-        if (!snap.exists || snap.data().bloqueado === true) {
-          await auth.signOut();
-          throw { code: 'conta-removida' };
-        }
-
-        window.location.href = 'hub.html';
+        // Apenas autentica. O onAuthStateChanged acima é quem verifica o
+        // acesso e redireciona (ou bloqueia) — evita leitura dupla do doc.
+        await auth.signInWithEmailAndPassword(email, senha);
       } catch (err) {
-        errEl.textContent = traduzirErroAuth(err.code);
-        errEl.style.display = 'block';
-        btn.disabled = false;
-        btn.textContent = 'Entrar';
+        mostrarErroLogin(traduzirErroAuth(err.code));
       }
     });
 
