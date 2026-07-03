@@ -29,7 +29,8 @@ users/{uid}.permissions = {
   'suporte-operacoes':       { adicionar, editar, reordenarItens, reordenarAbas, moverLixeira, restaurar, apagarPermanente, migrar },
   'agregador-links':         { adicionar, editar, reordenarItens, reordenarAbas, moverLixeira, restaurar, apagarPermanente },
   'solicitacao-manutencoes': { criar, painelAdm },
-  'ronda-callink':           { visualizar, registrarRonda, editar, gerenciarLocais, gerenciarProdutos, gerenciarClientes, moverLixeira, restaurar, apagarPermanente }
+  'ronda-callink':           { visualizar, registrarRonda, editar, gerenciarLocais, gerenciarProdutos, gerenciarClientes, moverLixeira, restaurar, apagarPermanente },
+  'ronda-linkcall':          { visualizar, registrarRonda, editar, gerenciarLocais, gerenciarProdutos, gerenciarClientes, moverLixeira, restaurar, apagarPermanente }
 }
 ```
 Regras do resolver:
@@ -164,6 +165,8 @@ lixeira-ronda-callink/{id}                   → { tipoItem:'ronda'|'local'|'pro
 ```
 Cliente externo (somente leitura, vê só os locais vinculados): `users/{uid}.rondaCallinkCliente=true` + `users/{uid}.rondaCallinkLocais=[localId]`, gravados na aba "Acessos de Clientes" do próprio projeto. Imagens são reduzidas via canvas (`comprimirImagem` em `js/app.js`) antes de virar base64. **Restrição por local é só de UI** enquanto as rules do Firebase não forem endurecidas para este projeto.
 
+**Ronda Linkcall** (projectId `ronda-linkcall`, pasta `projetos/ronda-linkcall`) é um **clone totalmente independente** do Ronda Callink: mesmo código, mas com todas as coleções, permissões e campos de cliente com o prefixo trocado (`ronda-linkcall-*`, `lixeira-ronda-linkcall`, `users/{uid}.rondaLinkcallCliente` / `rondaLinkcallLocais`). Os dois não compartilham dados. Ao alterar o comportamento de um, replicar no outro.
+
 **Categorias de usuários** (admin.html): filtros `Todos` (todos) e `Genérica` (sem categoria) são virtuais; as demais vêm de `categorias-usuarios`. Admins/superadmins seguem a mesma lógica de categoria dos usuários comuns (aparecem no setor atribuído ou em `Genérica`). Excluir uma categoria devolve seus usuários para Genérica (limpa `users/{uid}.categoria` em batch).
 
 ## Projetos existentes
@@ -175,3 +178,4 @@ Cliente externo (somente leitura, vê só os locais vinculados): `users/{uid}.ro
 | `projetos/solicitação-manuntenções` | `solicitação-manuntenções` | (ainda sem lixeira) |
 | `projetos/agregador-links` | `agregador-links` | `lixeira-links` |
 | `projetos/ronda-callink` | `ronda-callink` | `lixeira-ronda-callink` |
+| `projetos/ronda-linkcall` | `ronda-linkcall` | `lixeira-ronda-linkcall` |
