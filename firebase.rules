@@ -3,9 +3,17 @@ rules_version = '2';
 // ================================================================
 // AUDICOM HUB — Regras de Segurança Firestore
 //
-// Modelo: qualquer usuário autenticado (login + senha) tem acesso
-// total ao sistema. Restrições por role (user/admin/superadmin)
-// são aplicadas apenas na UI/HTML — não no Firestore.
+// Modelo: o acesso NÃO é concedido apenas por estar autenticado.
+// Só tem acesso quem é "membro ativo": possui o documento
+// users/{uid} E não está marcado como bloqueado.
+//
+// Assim, um usuário "excluído" (doc apagado) ou "bloqueado" perde
+// acesso ao banco IMEDIATAMENTE, mesmo que a conta do Firebase Auth
+// continue existindo (o front-end não consegue apagar a conta Auth
+// de outro usuário — isso exigiria Admin SDK/backend).
+//
+// Restrições por role (user/admin/superadmin) continuam sendo
+// aplicadas apenas na UI/HTML.
 // ================================================================
 
 service cloud.firestore {
@@ -15,8 +23,27 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Dados do doc do próprio usuário logado.
+    function meuDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Membro ativo = autenticado + doc de usuário existente + não bloqueado.
+    function isMembroAtivo() {
+      return isAuth()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && meuDoc().get('bloqueado', false) != true;
+    }
+
+    // O usuário SEMPRE pode ler o próprio doc (mesmo bloqueado ou já apagado),
+    // para o front-end detectar o bloqueio/exclusão e encerrar a sessão.
+    match /users/{uid} {
+      allow read: if isAuth() && request.auth.uid == uid;
+    }
+
+    // Regra global: somente membros ativos leem/escrevem qualquer documento.
     match /{document=**} {
-      allow read, write: if isAuth();
+      allow read, write: if isMembroAtivo();
     }
   }
 }

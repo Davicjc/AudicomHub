@@ -14,9 +14,7 @@
 
 ## Modelo de segurança
 
-**Firebase Rules**: o acesso ao Firestore **não** é concedido só por estar autenticado. Só acessa quem é **membro ativo**: possui o doc `users/{uid}` **e** não está com `bloqueado: true`. Um usuário excluído (doc apagado) ou bloqueado perde acesso ao banco imediatamente, mesmo que a conta do Firebase Auth continue existindo (o front não consegue apagar a conta Auth de outro usuário — exigiria Admin SDK/backend). Exceção nas rules: o usuário sempre pode ler o **próprio** doc, para o front detectar o bloqueio e encerrar a sessão. Não há restrição por **role** no banco — role continua sendo só de UI.
-
-**Não recriar doc de usuário no cliente**: `index.html` (login) e `requireAuth`/`requireAdmin` (`shared/auth-guard.js`) **nunca** devem auto-criar `users/{uid}` — isso ressuscitaria usuários excluídos. Se o doc não existir ou `bloqueado === true`, fazer `auth.signOut()` e mandar para `index.html?bloqueado=1`. Contas são criadas **apenas** pelo admin (`admin.html` via app secundário).
+**Firebase Rules**: qualquer usuário autenticado (login + senha) tem acesso total ao Firestore. Não há restrição por role no banco.
 
 **UI (HTML/JS)**: as restrições de role e de permissões granulares são aplicadas **apenas visualmente** — mostrando ou ocultando botões no HTML. Funções JS **não** devem ter `if (!window._isAdmin) return;` no corpo. (Única exceção documentada: o guard de navegação `showSection('admin-section')` em solicitação-manutenções.)
 
@@ -53,19 +51,9 @@ Todo projeto novo deve seguir este padrão — já aplicado em `suporte-roteador
 
 ### Firebase Rules (template)
 ```
-// Membro ativo = autenticado + doc users/{uid} existe + não bloqueado
-function isMembroAtivo() {
-  return request.auth != null
-    && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-    && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('bloqueado', false) != true;
-}
-// Usuário sempre lê o próprio doc (p/ o front detectar bloqueio e deslogar)
-match /users/{uid} {
-  allow read: if request.auth != null && request.auth.uid == uid;
-}
-// Regra global: só membros ativos leem/escrevem
+// Regra global: qualquer autenticado pode ler e escrever tudo
 match /{document=**} {
-  allow read, write: if isMembroAtivo();
+  allow read, write: if request.auth != null;
 }
 ```
 
@@ -152,7 +140,7 @@ projetos/{projectId}/...          → conteúdo de cada projeto
 lixeira-{projectId}/{id}          → itens deletados (soft-delete)
 ```
 
-**Categorias de usuários** (admin.html): filtros `Todos` (todos) e `Genérica` (sem categoria) são virtuais; as demais vêm de `categorias-usuarios`. Admins/superadmins seguem a mesma lógica de categoria dos usuários comuns (aparecem no setor atribuído ou em `Genérica`). Excluir uma categoria devolve seus usuários para Genérica (limpa `users/{uid}.categoria` em batch).
+**Categorias de usuários** (admin.html): filtros `Todos` (todos) e `Genérica` (sem categoria) são virtuais; as demais vêm de `categorias-usuarios`. Admins/superadmins aparecem só em `Todos`. Excluir uma categoria devolve seus usuários para Genérica (limpa `users/{uid}.categoria` em batch).
 
 ## Projetos existentes
 | pasta | projectId | lixeira |

@@ -18,16 +18,11 @@ async function requireAuth(projectId = null) {
       try {
         const snap = await db.collection('users').doc(user.uid).get();
 
-        if (!snap.exists) {
-          // Usuário sem documento — auto-cria com role "user" sem acesso
-          await db.collection('users').doc(user.uid).set({
-            email: user.email,
-            name: user.displayName || user.email.split('@')[0],
-            role: 'user',
-            projects: {},
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
-          window.location.href = SITE_ROOT + 'hub.html';
+        // Conta excluída (sem doc) ou bloqueada → encerra a sessão.
+        // NUNCA recriar o doc aqui: isso ressuscitaria usuários removidos.
+        if (!snap.exists || snap.data().bloqueado === true) {
+          await auth.signOut();
+          window.location.href = SITE_ROOT + 'index.html?bloqueado=1';
           return;
         }
 
@@ -36,6 +31,7 @@ async function requireAuth(projectId = null) {
         resolve({ user, userData });
       } catch (err) {
         console.error('Erro ao verificar autenticação:', err);
+        await auth.signOut();
         window.location.href = SITE_ROOT + 'index.html';
       }
     });
@@ -52,8 +48,10 @@ async function requireAdmin() {
       }
 
       const snap = await db.collection('users').doc(user.uid).get();
-      if (!snap.exists) {
-        window.location.href = SITE_ROOT + 'index.html';
+      // Conta excluída (sem doc) ou bloqueada → encerra a sessão.
+      if (!snap.exists || snap.data().bloqueado === true) {
+        await auth.signOut();
+        window.location.href = SITE_ROOT + 'index.html?bloqueado=1';
         return;
       }
 
@@ -82,6 +80,7 @@ function traduzirErroAuth(code) {
     'auth/too-many-requests':     'Muitas tentativas. Aguarde e tente novamente.',
     'auth/network-request-failed':'Sem conexão. Verifique a internet.',
     'auth/user-disabled':         'Conta desativada. Fale com o administrador.',
+    'conta-removida':             'Conta removida ou bloqueada. Fale com o administrador.',
   };
   return map[code] || 'Erro inesperado. Tente novamente.';
 }

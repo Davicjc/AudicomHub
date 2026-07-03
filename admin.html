@@ -693,7 +693,6 @@
 
     function contarUsuariosCategoria(catId) {
       return allUsers.filter(u => {
-        if (u.role === 'superadmin' || u.role === 'admin') return catId === 'todos';
         if (catId === 'todos') return true;
         const c = u.categoria;
         const existe = c && allCategorias.some(cat => cat.id === c);
@@ -829,10 +828,9 @@
 
       let lista = allUsers;
 
-      // filtro por categoria/setor (admins aparecem só em "Todos")
+      // filtro por categoria/setor (admins seguem a mesma lógica dos usuários)
       if (userCatFilter !== 'todos') {
         lista = lista.filter(u => {
-          if (u.role === 'superadmin' || u.role === 'admin') return false;
           const existe = u.categoria && allCategorias.some(c => c.id === u.categoria);
           return userCatFilter === 'generica' ? !existe : u.categoria === userCatFilter;
         });
@@ -863,7 +861,7 @@
           ? '<span class="badge" style="background:rgba(16,185,129,.15);color:#10b981;font-size:11px"><i class="fas fa-check-double"></i> Acesso Total</span>'
           : renderAcessosArvore(u);
 
-        const catNome = (u.role === 'superadmin' || u.role === 'admin') ? null : nomeCategoriaUsuario(u);
+        const catNome = nomeCategoriaUsuario(u);
         const catBadge = catNome ? `<div class="user-cat-badge"><i class="fas fa-tag"></i> ${escapeHTML(catNome)}</div>` : '';
 
         return `
@@ -1040,9 +1038,9 @@
     }
 
     function confirmarExcluirUsuario(userId, nome) {
-      if (!confirm(`Excluir "${nome}" do sistema? (O usuário continuará no Firebase Auth — remova manualmente pelo console se necessário.)`)) return;
+      if (!confirm(`Excluir "${nome}" do sistema?\n\nO acesso ao Hub é revogado imediatamente (o usuário não consegue mais logar). A conta de e-mail/senha continua no Firebase Auth, porém inativa — remova-a manualmente pelo console se quiser liberar o e-mail.`)) return;
       db.collection('users').doc(userId).delete()
-        .then(() => { showToast('Usuário removido.', 'success'); carregarUsuarios(); })
+        .then(() => { showToast('Usuário removido. Acesso revogado.', 'success'); carregarUsuarios(); })
         .catch(err => showToast('Erro: ' + err.message, 'error'));
     }
 

@@ -141,6 +141,15 @@
       if (user) window.location.href = 'hub.html';
     });
 
+    // Aviso ao ser deslogado por conta removida/bloqueada
+    if (new URLSearchParams(location.search).get('bloqueado') === '1') {
+      const errEl = document.getElementById('loginError');
+      if (errEl) {
+        errEl.textContent = 'Sua conta foi removida ou bloqueada. Fale com o administrador.';
+        errEl.style.display = 'block';
+      }
+    }
+
     document.getElementById('loginForm').addEventListener('submit', async e => {
       e.preventDefault();
 
@@ -156,16 +165,13 @@
       try {
         const { user } = await auth.signInWithEmailAndPassword(email, senha);
 
-        // Cria documento Firestore se não existir (primeiro login)
+        // Só entra quem é membro ativo: doc existente e não bloqueado.
+        // Nunca criar o doc aqui — contas são criadas apenas pelo admin;
+        // recriar ressuscitaria usuários excluídos.
         const snap = await db.collection('users').doc(user.uid).get();
-        if (!snap.exists) {
-          await db.collection('users').doc(user.uid).set({
-            email: user.email,
-            name: user.displayName || user.email.split('@')[0],
-            role: 'user',
-            projects: {},
-            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
+        if (!snap.exists || snap.data().bloqueado === true) {
+          await auth.signOut();
+          throw { code: 'conta-removida' };
         }
 
         window.location.href = 'hub.html';
