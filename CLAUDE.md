@@ -132,12 +132,15 @@ Evitar `innerHTML +=` com dados externos — preferir `createElement` + `textCon
 
 ## Estrutura Firestore
 ```
-users/{uid}
+users/{uid}                       → inclui `categoria` (id da categoria/setor; ausente = Genérica)
 config/{chave}
 projetos-lista/{id}
+categorias-usuarios/{id}          → { nome, ordem, criadoPor, criadoEm } — setores p/ organizar usuários no admin
 projetos/{projectId}/...          → conteúdo de cada projeto
 lixeira-{projectId}/{id}          → itens deletados (soft-delete)
 ```
+
+**Categorias de usuários** (admin.html): filtros `Todos` (todos) e `Genérica` (sem categoria) são virtuais; as demais vêm de `categorias-usuarios`. Admins/superadmins aparecem só em `Todos`. Excluir uma categoria devolve seus usuários para Genérica (limpa `users/{uid}.categoria` em batch).
 
 ## Projetos existentes
 | pasta | projectId | lixeira |

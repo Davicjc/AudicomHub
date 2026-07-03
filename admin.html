@@ -134,6 +134,94 @@
     .perm-cb-label input:disabled + span { opacity: .55; }
     .perm-none { font-size: 12px; color: var(--muted); font-style: italic; }
     .perms-hidden .perm-sub { display: none !important; }
+
+    /* ── Árvore de acessos (lista de usuários) ── */
+    .acc-tree { display: flex; flex-direction: column; gap: 12px; }
+    .acc-proj-block { display: flex; flex-direction: column; }
+    .acc-proj {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 12.5px; font-weight: 600; color: var(--text);
+    }
+    .acc-proj-icon { font-size: 14px; line-height: 1; }
+    .acc-proj-crown { color: #fbbf24; font-size: 11px; }
+    .acc-perms {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+      margin: 7px 0 0 8px; padding-left: 14px;
+      border-left: 2px solid rgba(255,255,255,.1);
+    }
+    .acc-perm {
+      position: relative;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 10.5px; font-weight: 600; letter-spacing: .2px;
+      padding: 3px 10px; border-radius: 100px;
+      border: 1px solid transparent; white-space: nowrap;
+    }
+    .acc-perm::before {
+      content: ''; position: absolute; left: -14px; top: 50%;
+      width: 10px; height: 2px; background: rgba(255,255,255,.1);
+    }
+    .acc-perm i { font-size: 9px; }
+    .acc-perm-none { font-size: 11px; color: #6b7280; font-style: italic; }
+
+    /* ── Busca de usuários ── */
+    .user-search {
+      position: relative; display: flex; align-items: center;
+      flex: 1; min-width: 220px; max-width: 360px;
+    }
+    .user-search > i {
+      position: absolute; left: 12px; color: var(--muted); font-size: 13px; pointer-events: none;
+    }
+    .user-search input {
+      width: 100%; padding: 9px 34px 9px 34px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); color: var(--text);
+      font-family: inherit; font-size: 13px; transition: border-color .18s;
+    }
+    .user-search input:focus { outline: none; border-color: var(--accent); }
+    .user-search-clear {
+      position: absolute; right: 8px; background: none; border: none;
+      color: var(--muted); cursor: pointer; padding: 4px; font-size: 12px;
+    }
+    .user-search-clear:hover { color: var(--text); }
+
+    /* ── Categorias de usuários (abas de filtro) ── */
+    .cat-tabs {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 16px;
+    }
+    .cat-tab {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 6px 13px; border-radius: 100px;
+      font-size: 12px; font-family: inherit; cursor: pointer;
+      background: var(--card); border: 1px solid var(--border); color: var(--muted);
+      transition: all .16s;
+    }
+    .cat-tab:hover { border-color: var(--accent); color: var(--text); }
+    .cat-tab.active { background: var(--accent-dim); border-color: rgba(59,130,246,.5); color: var(--text); font-weight: 600; }
+    .cat-tab .cat-count {
+      font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 100px;
+      background: rgba(255,255,255,.08); color: var(--muted);
+    }
+    .cat-tab.active .cat-count { background: rgba(59,130,246,.3); color: #93c5fd; }
+    .cat-tab-del {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      padding: 0 0 0 2px; font-size: 11px; opacity: .6;
+    }
+    .cat-tab-del:hover { color: #ef4444; opacity: 1; }
+    .cat-tab-add {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 13px; border-radius: 100px;
+      font-size: 12px; font-family: inherit; cursor: pointer;
+      background: transparent; border: 1px dashed var(--border); color: var(--muted);
+      transition: all .16s;
+    }
+    .cat-tab-add:hover { border-color: var(--accent); color: var(--accent); }
+    .user-cat-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 10.5px; font-weight: 600; margin-top: 5px;
+      padding: 2px 9px; border-radius: 100px;
+      background: rgba(139,92,246,.14); color: #a78bfa; border: 1px solid rgba(139,92,246,.3);
+    }
   </style>
 </head>
 <body>
@@ -161,10 +249,15 @@
 
     <!-- ===== TAB USUÁRIOS ===== -->
     <div class="tab-panel active" id="tab-usuarios">
-      <div class="flex justify-between items-center" style="margin-bottom:16px">
-        <p class="text-muted text-sm">Usuários registrados no sistema.</p>
+      <div class="flex justify-between items-center" style="margin-bottom:16px;gap:12px;flex-wrap:wrap">
+        <div class="user-search">
+          <i class="fas fa-search"></i>
+          <input type="text" id="userSearchInput" placeholder="Pesquisar por nome ou e-mail…" autocomplete="off" oninput="filtrarUsuarios(this.value)">
+          <button type="button" id="userSearchClear" class="user-search-clear" style="display:none" onclick="limparBuscaUsuarios()" title="Limpar"><i class="fas fa-times"></i></button>
+        </div>
         <button class="btn btn-primary btn-sm" id="btnNovoUsuario" style="display:none" onclick="abrirModalNovoUsuario()">+ Novo usuário</button>
       </div>
+      <div class="cat-tabs" id="userCatTabs"></div>
       <div class="glass" style="padding:0;overflow:hidden">
         <table class="user-table" id="userTable">
           <thead>
@@ -257,8 +350,13 @@
         </p>
       </div>
 
+      <div class="form-group mt-12">
+        <label>Categoria / Setor</label>
+        <select id="editUserCategoria" class="input"></select>
+      </div>
+
       <div class="form-group mt-16">
-        <label>Acesso aos projetos e permissões</label>
+        <label id="permLabelEdit">Acesso aos projetos e permissões</label>
         <p class="text-muted text-sm mt-4" id="permAccessTotalNote" style="display:none">
           <i class="fas fa-check-double"></i> Acesso total — admins têm todas as permissões em todos os projetos.
         </p>
@@ -294,9 +392,15 @@
         </div>
       </div>
 
-      <div class="form-group mt-12">
-        <label>E-mail</label>
-        <input type="email" id="newUserEmail" class="input" placeholder="usuario@audicom.com.br">
+      <div class="form-row mt-12">
+        <div class="form-group">
+          <label>E-mail</label>
+          <input type="email" id="newUserEmail" class="input" placeholder="usuario@audicom.com.br">
+        </div>
+        <div class="form-group">
+          <label>Categoria / Setor</label>
+          <select id="newUserCategoria" class="input"></select>
+        </div>
       </div>
 
       <div class="form-row mt-12">
@@ -322,7 +426,7 @@
       <div id="senhaMatchMsg" style="font-size:12px;margin-top:4px;min-height:16px"></div>
 
       <div class="form-group mt-16">
-        <label>Acesso aos projetos e permissões</label>
+        <label id="permLabelNew">Acesso aos projetos e permissões</label>
         <p class="text-muted text-sm mt-4" id="permAccessTotalNoteNew" style="display:none">
           <i class="fas fa-check-double"></i> Acesso total — admins têm todas as permissões em todos os projetos.
         </p>
@@ -421,6 +525,12 @@
     let currentAdmin = null;
     let allProjects  = [];
 
+    function escapeHTML(str) {
+      return String(str == null ? '' : str)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
     // ── Projetos padrão ─────────────────────────────
     const PROJETOS_PADRAO = [
       { id: 'suporte-roteadores',     name: 'Suporte Roteadores',         icon: '🔧', url: 'projetos/suporte-roteadores/index.html',          desc: 'Guias técnicos de roteadores e equipamentos',    ordem: 1, enabled: true },
@@ -449,6 +559,7 @@
       await autoSeed();
 
       await carregarProjetos(); // Load projects first!
+      await carregarCategorias();
       carregarUsuarios();
       carregarConfig();
     });
@@ -502,60 +613,268 @@
     /* ═══════════════════════════════════════════════
        USUÁRIOS
     ═══════════════════════════════════════════════ */
+    // Cores/ícones/rótulos curtos de cada permissão (exibição na árvore de acessos)
+    const PERM_META = {
+      adicionar:        { label: 'Adicionar',        cor: '#10b981', icon: 'fa-plus' },
+      criar:            { label: 'Criar',            cor: '#10b981', icon: 'fa-plus' },
+      editar:           { label: 'Editar',           cor: '#3b82f6', icon: 'fa-pen' },
+      reordenarItens:   { label: 'Reordenar itens',  cor: '#a855f7', icon: 'fa-sort' },
+      reordenarAbas:    { label: 'Reordenar abas',   cor: '#8b5cf6', icon: 'fa-list' },
+      moverLixeira:     { label: 'Mover p/ lixeira', cor: '#f59e0b', icon: 'fa-trash' },
+      restaurar:        { label: 'Restaurar',        cor: '#06b6d4', icon: 'fa-rotate-left' },
+      apagarPermanente: { label: 'Apagar permanente',cor: '#ef4444', icon: 'fa-skull' },
+      migrar:           { label: 'Migrar p/ nuvem',  cor: '#14b8a6', icon: 'fa-cloud-arrow-up' },
+      painelAdm:        { label: 'Painel admin',     cor: '#fbbf24', icon: 'fa-crown' },
+    };
+
+    // Monta a árvore "projeto → permissões liberadas" para um usuário comum
+    function renderAcessosArvore(u) {
+      const blocos = [];
+      allProjects.forEach(p => {
+        const temAcesso = !!(u.projects && u.projects[p.id]);
+        const canP = resolverPermissoes(u, p.id);
+        const isAdm = !!canP.painelAdm;
+        if (!temAcesso && !isAdm) return;
+
+        const cat = (typeof PERMISSOES_CATALOGO !== 'undefined' && PERMISSOES_CATALOGO[p.id]) || {};
+        const chaves = Object.keys(cat);
+
+        let permsHTML;
+        if (!chaves.length) {
+          // projeto sem opções granulares (ex.: sistema-chamados)
+          permsHTML = `<span class="acc-perm" style="color:#9ca3af;background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12)"><i class="fas fa-check"></i> Acesso liberado</span>`;
+        } else {
+          const liberadas = chaves.filter(k => canP[k]).map(k => {
+            const m = PERM_META[k] || { label: k, cor: '#9ca3af', icon: 'fa-check' };
+            return `<span class="acc-perm" style="color:${m.cor};background:${m.cor}1f;border-color:${m.cor}55"><i class="fas ${m.icon}"></i> ${m.label}</span>`;
+          });
+          permsHTML = liberadas.length
+            ? liberadas.join('')
+            : '<span class="acc-perm-none">nenhuma ação liberada</span>';
+        }
+
+        blocos.push(`
+          <div class="acc-proj-block">
+            <div class="acc-proj">
+              <span class="acc-proj-icon">${p.icon || '📁'}</span>
+              <span class="acc-proj-name">${p.name}</span>
+              ${isAdm ? '<i class="fas fa-crown acc-proj-crown" title="Admin neste projeto"></i>' : ''}
+            </div>
+            <div class="acc-perms">${permsHTML}</div>
+          </div>`);
+      });
+
+      return blocos.length
+        ? `<div class="acc-tree">${blocos.join('')}</div>`
+        : '<span style="color:#6b7280;font-size:11px;font-style:italic">Sem acessos</span>';
+    }
+
+    let allUsers = [];
+    let userSearchTerm = '';
+
+    /* ═══════════════════════════════════════════════
+       CATEGORIAS / SETORES DE USUÁRIOS
+       (coleção top-level: categorias-usuarios)
+    ═══════════════════════════════════════════════ */
+    let allCategorias = [];
+    let userCatFilter = 'todos'; // 'todos' | 'generica' | <categoriaId>
+
+    async function carregarCategorias() {
+      try {
+        const snap = await db.collection('categorias-usuarios').orderBy('ordem').get();
+        allCategorias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch (e) {
+        // sem índice/ordem ainda — carrega sem ordenar
+        const snap = await db.collection('categorias-usuarios').get();
+        allCategorias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      }
+      renderCatTabs();
+    }
+
+    function contarUsuariosCategoria(catId) {
+      return allUsers.filter(u => {
+        if (u.role === 'superadmin' || u.role === 'admin') return catId === 'todos';
+        if (catId === 'todos') return true;
+        const c = u.categoria;
+        const existe = c && allCategorias.some(cat => cat.id === c);
+        return catId === 'generica' ? !existe : c === catId;
+      }).length;
+    }
+
+    function renderCatTabs() {
+      const box = document.getElementById('userCatTabs');
+      const fixas = [
+        { id: 'todos',    nome: 'Todos',    icon: 'fa-users' },
+        { id: 'generica', nome: 'Genérica', icon: 'fa-user' },
+      ];
+      const podeGerir = currentAdmin && (currentAdmin.role === 'superadmin' || currentAdmin.role === 'admin');
+
+      let html = fixas.map(c => `
+        <button class="cat-tab ${userCatFilter === c.id ? 'active' : ''}" onclick="filtrarPorCategoria('${c.id}')">
+          <i class="fas ${c.icon}"></i> ${escapeHTML(c.nome)}
+          <span class="cat-count">${contarUsuariosCategoria(c.id)}</span>
+        </button>`).join('');
+
+      html += allCategorias.map(c => `
+        <button class="cat-tab ${userCatFilter === c.id ? 'active' : ''}" onclick="filtrarPorCategoria('${c.id}')">
+          <i class="fas fa-tag"></i> ${escapeHTML(c.nome)}
+          <span class="cat-count">${contarUsuariosCategoria(c.id)}</span>
+          ${podeGerir ? `<span class="cat-tab-del" title="Excluir categoria" onclick="event.stopPropagation();excluirCategoria('${c.id}','${escapeHTML((c.nome||'').replace(/'/g,''))}')"><i class="fas fa-times"></i></span>` : ''}
+        </button>`).join('');
+
+      if (podeGerir) {
+        html += `<button class="cat-tab-add" onclick="criarCategoria()"><i class="fas fa-plus"></i> Nova categoria</button>`;
+      }
+
+      box.innerHTML = html;
+    }
+
+    function filtrarPorCategoria(catId) {
+      userCatFilter = catId;
+      renderCatTabs();
+      renderizarUsuarios();
+    }
+
+    async function criarCategoria() {
+      const nome = (prompt('Nome da nova categoria / setor:') || '').trim();
+      if (!nome) return;
+      if (allCategorias.some(c => (c.nome || '').toLowerCase() === nome.toLowerCase())) {
+        showToast('Já existe uma categoria com esse nome.', 'error');
+        return;
+      }
+      try {
+        await db.collection('categorias-usuarios').add({
+          nome,
+          ordem: allCategorias.length + 1,
+          criadoPor: currentAdmin ? (currentAdmin.email || '') : '',
+          criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showToast('Categoria criada.', 'success');
+        await carregarCategorias();
+      } catch (err) {
+        showToast('Erro ao criar categoria: ' + err.message, 'error');
+      }
+    }
+
+    async function excluirCategoria(catId, nome) {
+      if (!confirm(`Excluir a categoria "${nome}"? Os usuários dela voltam para "Genérica".`)) return;
+      try {
+        // move usuários dessa categoria de volta para Genérica
+        const afetados = allUsers.filter(u => u.categoria === catId);
+        if (afetados.length) {
+          const batch = db.batch();
+          afetados.forEach(u => batch.update(db.collection('users').doc(u.id), {
+            categoria: firebase.firestore.FieldValue.delete()
+          }));
+          await batch.commit();
+          afetados.forEach(u => { delete u.categoria; });
+        }
+        await db.collection('categorias-usuarios').doc(catId).delete();
+        if (userCatFilter === catId) userCatFilter = 'todos';
+        showToast('Categoria excluída.', 'success');
+        await carregarCategorias();
+        renderizarUsuarios();
+      } catch (err) {
+        showToast('Erro ao excluir categoria: ' + err.message, 'error');
+      }
+    }
+
+    // Popula um <select> de categorias (Genérica + todas as criadas)
+    function preencherSelectCategorias(selectId, selecionada) {
+      const sel = document.getElementById(selectId);
+      if (!sel) return;
+      let html = '<option value="">Genérica (sem setor)</option>';
+      html += allCategorias.map(c => `<option value="${c.id}">${escapeHTML(c.nome)}</option>`).join('');
+      sel.innerHTML = html;
+      sel.value = selecionada && allCategorias.some(c => c.id === selecionada) ? selecionada : '';
+    }
+
+    // Nome da categoria de um usuário (ou null se genérica)
+    function nomeCategoriaUsuario(u) {
+      if (!u.categoria) return null;
+      const c = allCategorias.find(cat => cat.id === u.categoria);
+      return c ? c.nome : null;
+    }
+
     async function carregarUsuarios() {
       const tbody = document.getElementById('userTableBody');
       tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;color:var(--muted);text-align:center">Carregando…</td></tr>';
 
       const snap = await db.collection('users').orderBy('createdAt').get();
+      allUsers = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderCatTabs(); // atualiza as contagens agora que os usuários chegaram
+      renderizarUsuarios();
+    }
 
-      if (snap.empty) {
+    function filtrarUsuarios(termo) {
+      userSearchTerm = (termo || '').trim().toLowerCase();
+      document.getElementById('userSearchClear').style.display = userSearchTerm ? 'block' : 'none';
+      renderizarUsuarios();
+    }
+
+    function limparBuscaUsuarios() {
+      const input = document.getElementById('userSearchInput');
+      input.value = '';
+      input.focus();
+      filtrarUsuarios('');
+    }
+
+    function renderizarUsuarios() {
+      const tbody = document.getElementById('userTableBody');
+
+      if (!allUsers.length) {
         tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;color:var(--muted);text-align:center">Nenhum usuário.</td></tr>';
         return;
       }
 
-      tbody.innerHTML = '';
-      snap.forEach(doc => {
-        const u = { id: doc.id, ...doc.data() };
+      let lista = allUsers;
+
+      // filtro por categoria/setor (admins aparecem só em "Todos")
+      if (userCatFilter !== 'todos') {
+        lista = lista.filter(u => {
+          if (u.role === 'superadmin' || u.role === 'admin') return false;
+          const existe = u.categoria && allCategorias.some(c => c.id === u.categoria);
+          return userCatFilter === 'generica' ? !existe : u.categoria === userCatFilter;
+        });
+      }
+
+      // filtro por texto (nome ou e-mail)
+      if (userSearchTerm) {
+        lista = lista.filter(u =>
+          (u.name || '').toLowerCase().includes(userSearchTerm) ||
+          (u.email || '').toLowerCase().includes(userSearchTerm));
+      }
+
+      if (!lista.length) {
+        const msg = userSearchTerm
+          ? `Nenhum usuário encontrado para "${escapeHTML(userSearchTerm)}".`
+          : 'Nenhum usuário nesta categoria.';
+        tbody.innerHTML = `<tr><td colspan="4" style="padding:20px;color:var(--muted);text-align:center">${msg}</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = lista.map(u => {
         const badgeClass = u.role === 'superadmin' ? 'badge-superadmin' : u.role === 'admin' ? 'badge-admin' : 'badge-user';
         const badgeLabel = u.role === 'superadmin' ? 'Super Admin' : u.role === 'admin' ? 'Admin' : 'Usuário';
         const isSelf = u.id === auth.currentUser.uid;
         const isSuperAdmin = u.role === 'superadmin';
 
-        let acessosHTML = '';
-        if (u.role === 'superadmin' || u.role === 'admin') {
-            acessosHTML = '<span class="badge" style="background:rgba(16,185,129,.15);color:#10b981;font-size:11px"><i class="fas fa-check-double"></i> Acesso Total</span>';
-        } else {
-            const projs = [];
-            allProjects.forEach(p => {
-                const isNormal = u.projects && u.projects[p.id];
-                const canP = resolverPermissoes(u, p.id);
-                const isAdm = !!canP.painelAdm;
+        const acessosHTML = (u.role === 'superadmin' || u.role === 'admin')
+          ? '<span class="badge" style="background:rgba(16,185,129,.15);color:#10b981;font-size:11px"><i class="fas fa-check-double"></i> Acesso Total</span>'
+          : renderAcessosArvore(u);
 
-                // ícone de permissões personalizadas + resumo no tooltip
-                let customIcon = '';
-                const cat = (typeof PERMISSOES_CATALOGO !== 'undefined' && PERMISSOES_CATALOGO[p.id]) || {};
-                if (u.permissions && u.permissions[p.id] && Object.keys(cat).length) {
-                    const resumo = Object.keys(cat).map(k => `${cat[k].label}: ${canP[k] ? '✓' : '✗'}`).join(' · ');
-                    customIcon = ` <i class="fas fa-sliders" style="margin-left:4px" title="Permissões personalizadas — ${resumo}"></i>`;
-                }
+        const catNome = (u.role === 'superadmin' || u.role === 'admin') ? null : nomeCategoriaUsuario(u);
+        const catBadge = catNome ? `<div class="user-cat-badge"><i class="fas fa-tag"></i> ${escapeHTML(catNome)}</div>` : '';
 
-                if (isAdm) {
-                    projs.push(`<span class="badge" style="background:rgba(251, 191, 36, 0.15);color:#fbbf24;font-size:11px;margin-right:4px;margin-bottom:4px;display:inline-block;border:1px solid rgba(251, 191, 36, 0.3)">${p.icon} ${p.name} <i class="fas fa-crown" style="margin-left:4px" title="Admin neste projeto"></i>${customIcon}</span>`);
-                } else if (isNormal) {
-                    projs.push(`<span class="badge" style="background:rgba(255,255,255,.05);color:#9ca3af;font-size:11px;margin-right:4px;margin-bottom:4px;display:inline-block;border:1px solid rgba(255,255,255,.1)">${p.icon} ${p.name}${customIcon}</span>`);
-                }
-            });
-            acessosHTML = projs.length > 0 ? projs.join('') : '<span style="color:#6b7280;font-size:11px;font-style:italic">Sem acessos</span>';
-        }
-
-        tbody.innerHTML += `
+        return `
           <tr class="user-row">
             <td>
               <div style="font-weight:500">${u.name || '—'} ${isSelf ? '<span style="color:var(--muted);font-size:11px">(você)</span>' : ''}</div>
               <div class="user-email">${u.email}</div>
+              ${catBadge}
             </td>
             <td><span class="badge ${badgeClass}">${badgeLabel}</span></td>
-              <td style="max-width:300px;white-space:normal;padding-top:14px;padding-bottom:10px">${acessosHTML}</td>
+              <td style="max-width:340px;white-space:normal;padding-top:14px;padding-bottom:12px">${acessosHTML}</td>
             <td>
               <div class="user-actions">
                 <button class="btn btn-ghost btn-sm" onclick="editarUsuario('${u.id}')">Editar acesso</button>
@@ -563,7 +882,7 @@
               </div>
             </td>
           </tr>`;
-      });
+      }).join('');
     }
 
     async function editarUsuario(userId) {
@@ -578,6 +897,8 @@
       document.getElementById('superAdminNote').style.display = isSuperAdmin ? 'block' : 'none';
       document.getElementById('modalUserTitle').textContent = `Editar: ${u.name || u.email}`;
 
+      preencherSelectCategorias('editUserCategoria', u.categoria);
+
       // Renderiza chips de projetos + permissões granulares
       const grid = document.getElementById('projAccessGrid');
       grid.innerHTML = '';
@@ -590,8 +911,8 @@
       });
 
       const roleSelect = document.getElementById('editUserRole');
-      roleSelect.onchange = () => atualizarModoPermissoes('editUserRole', 'projAccessGrid', 'permAccessTotalNote');
-      atualizarModoPermissoes('editUserRole', 'projAccessGrid', 'permAccessTotalNote');
+      roleSelect.onchange = () => atualizarModoPermissoes('editUserRole', 'projAccessGrid', 'permAccessTotalNote', 'permLabelEdit');
+      atualizarModoPermissoes('editUserRole', 'projAccessGrid', 'permAccessTotalNote', 'permLabelEdit');
 
       abrirModal('modalUser');
     }
@@ -649,12 +970,14 @@
       else { mover.disabled = false; }
     }
 
-    // Role admin/superadmin → oculta painéis granulares e mostra "Acesso total"
-    function atualizarModoPermissoes(selectId, gridId, noteId) {
+    // Role admin/superadmin → esconde a seção de acesso/permissões e mostra só "Acesso total"
+    function atualizarModoPermissoes(selectId, gridId, noteId, labelId) {
       const role = document.getElementById(selectId).value;
       const isAdm = role === 'admin' || role === 'superadmin';
-      document.getElementById(gridId).classList.toggle('perms-hidden', isAdm);
+      document.getElementById(gridId).style.display = isAdm ? 'none' : 'grid';
       document.getElementById(noteId).style.display = isAdm ? 'block' : 'none';
+      const label = labelId && document.getElementById(labelId);
+      if (label) label.style.display = isAdm ? 'none' : 'block';
     }
 
     // Coleta { projId: { chave: bool } } dos painéis renderizados
@@ -690,7 +1013,11 @@
         return;
       }
 
+      // Categoria/setor (vazio = Genérica → remove o campo)
+      const catVal = document.getElementById('editUserCategoria').value;
+
       const updateData = { name, role: finalRole, projects };
+      updateData.categoria = catVal || firebase.firestore.FieldValue.delete();
       // Permissões granulares só valem para role "user" — para admin não são
       // gravadas nem apagadas (preservadas para um eventual rebaixamento)
       if (finalRole === 'user') {
@@ -929,6 +1256,10 @@
       document.getElementById('senhaMatchMsg').textContent = '';
       document.getElementById('btnCriarUsuario').disabled = false;
 
+      // Categoria — usa o filtro atual como sugestão, se for uma categoria real
+      const catSugerida = allCategorias.some(c => c.id === userCatFilter) ? userCatFilter : '';
+      preencherSelectCategorias('newUserCategoria', catSugerida);
+
       // Chips de projetos — todos desmarcados, permissões nos defaults do catálogo
       const grid = document.getElementById('newUserProjGrid');
       grid.innerHTML = '';
@@ -937,8 +1268,8 @@
         grid.innerHTML += renderChipComPermissoes(p, perms, false, 'nchip', 'newproj');
       });
 
-      roleSelect.onchange = () => atualizarModoPermissoes('newUserRole', 'newUserProjGrid', 'permAccessTotalNoteNew');
-      atualizarModoPermissoes('newUserRole', 'newUserProjGrid', 'permAccessTotalNoteNew');
+      roleSelect.onchange = () => atualizarModoPermissoes('newUserRole', 'newUserProjGrid', 'permAccessTotalNoteNew', 'permLabelNew');
+      atualizarModoPermissoes('newUserRole', 'newUserProjGrid', 'permAccessTotalNoteNew', 'permLabelNew');
 
       // Validação em tempo real das senhas
       const s1 = document.getElementById('newUserSenha');
@@ -996,6 +1327,7 @@
         const cred = await secondaryAuth.createUserWithEmailAndPassword(email, senha);
         const uid  = cred.user.uid;
 
+        const catVal = document.getElementById('newUserCategoria').value;
         const novoDoc = {
           name: nome || email,
           email,
@@ -1003,6 +1335,7 @@
           projects,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         };
+        if (catVal) novoDoc.categoria = catVal;
         if (role === 'user') {
           const permissions = coletarPermissoes('newUserProjGrid');
           novoDoc.permissions = permissions;
