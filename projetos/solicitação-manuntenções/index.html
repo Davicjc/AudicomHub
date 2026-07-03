@@ -13,6 +13,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
     <script src="../../shared/firebase-init.js"></script>
     <script src="../../shared/auth-guard.js"></script>
+    <script src="../../shared/permissions.js"></script>
 </head>
 <body>
 
@@ -33,7 +34,7 @@
             <nav id="tabsNav" class="sidebar-nav">
                 <div class="nav-section-label">Sistema</div>
                 
-                <div class="tab-wrapper">
+                <div class="tab-wrapper" id="btn-cadastro-tab">
                     <button class="tab-btn active" onclick="showSection('cadastro-section'); selectTab(this)">
                         <div class="nav-icon"><i class="fas fa-plus"></i></div>
                         <span>Nova Solicitação</span>
@@ -575,11 +576,12 @@
         }
 
         requireAuth('solicitacao-manutencoes').then(async ({ userData, user }) => {
-            window._isAdmin      = userData.role === 'superadmin' || userData.role === 'admin' || (userData.adminProjects && userData.adminProjects['solicitacao-manutencoes'] === true);
+            window._isAdmin      = userData.role === 'superadmin' || userData.role === 'admin';
             window._isSuperAdmin = userData.role === 'superadmin';
             window._userEmail    = user.email;
             window._currentUser  = user;
             window._userData     = userData;
+            window._can          = resolverPermissoes(userData, 'solicitacao-manutencoes');
 
             window._adminNome = user.displayName || user.email || 'Administrador';
             
@@ -618,15 +620,24 @@
             } catch (e) { }
 
             document.getElementById('appContent').style.display = 'flex';
-            
-            if (window._isAdmin) {
+
+            if (window._can.painelAdm) {
                 document.getElementById('btn-adm-tab').style.display = 'flex';
+            }
+            if (!window._can.criar) {
+                document.getElementById('btn-cadastro-tab').style.display = 'none';
             }
 
             const nameEl = document.getElementById('admin-username-display');
             if (nameEl) nameEl.textContent = window._adminNome;
-            
-            showSection('cadastro-section');
+
+            if (window._can.criar) {
+                showSection('cadastro-section');
+            } else {
+                showSection('login-section');
+                const abaLogin = document.querySelector('#tabsNav .tab-btn[onclick*="login-section"]');
+                if (abaLogin) selectTab(abaLogin);
+            }
         });
     </script>
 </body>

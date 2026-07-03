@@ -124,12 +124,12 @@ function gerarPainelDNS() {
             </div>
             <div style="display:flex;gap:6px;align-items:center">
                 <button class="btn btn-primary" onclick="event.stopPropagation();copiarTexto('${escaparAttr(dns.ip)}')"><i class="fas fa-copy"></i></button>
-                ${window._isAdmin ? btnAdm('fa-pen','',`event.stopPropagation();editarDNS('${dns.id}')`) : ''}
-                ${btnAdm('fa-trash','',`event.stopPropagation();deletarDNS('${dns.id}','${escaparAttr(dns.nome)}')`)}
+                ${window._can.editar ? btnAdm('fa-pen','',`event.stopPropagation();editarDNS('${dns.id}')`) : ''}
+                ${window._can.moverLixeira ? btnAdm('fa-trash','',`event.stopPropagation();deletarDNS('${dns.id}','${escaparAttr(dns.nome)}')`) : ''}
             </div>
         </div>`).join('')
         : '<p class="section-description">Nenhum DNS cadastrado.</p>';
-    html += btnAdm('fa-plus','Adicionar DNS','adicionarDNS()');
+    if (window._can.adicionar) html += btnAdm('fa-plus','Adicionar DNS','adicionarDNS()');
     container.innerHTML = html;
 }
 
@@ -143,8 +143,8 @@ function gerarPainelSenhas() {
                     ${grupo.criadoPor ? `<div class="item-autor">por ${escapeHTML(grupo.criadoPor)}</div>` : ''}
                 </div>
                 <div style="display:flex;gap:4px">
-                    ${btnAdm('fa-plus','',`adicionarCredencial('${grupo.id}')`)} ${window._isAdmin ? btnAdm('fa-pen','',`editarGrupoSenha('${grupo.id}')`) : ''}
-                    ${btnAdm('fa-trash','',`deletarGrupoSenha('${grupo.id}','${escaparAttr(grupo.nome)}')`)}
+                    ${window._can.adicionar ? btnAdm('fa-plus','',`adicionarCredencial('${grupo.id}')`) : ''} ${window._can.editar ? btnAdm('fa-pen','',`editarGrupoSenha('${grupo.id}')`) : ''}
+                    ${window._can.moverLixeira ? btnAdm('fa-trash','',`deletarGrupoSenha('${grupo.id}','${escaparAttr(grupo.nome)}')`) : ''}
                 </div>
             </div>
             <div class="credenciais-list">
@@ -163,14 +163,14 @@ function gerarPainelSenhas() {
                             <button class="copy-btn copy-credencial-btn" onclick="copiarCredencial('${escaparAttr(cred.usuario)}','${escaparAttr(cred.senha)}')" title="Copiar usuário e senha">
                                 <i class="fas fa-copy"></i><span>Tudo</span>
                             </button>
-                            ${window._isAdmin ? btnAdm('fa-pen','',`editarCredencial('${grupo.id}',${idx})`) : ''}
-                            ${btnAdm('fa-trash','',`deletarCredencial('${grupo.id}',${idx})`)}
+                            ${window._can.editar ? btnAdm('fa-pen','',`editarCredencial('${grupo.id}',${idx})`) : ''}
+                            ${window._can.moverLixeira ? btnAdm('fa-trash','',`deletarCredencial('${grupo.id}',${idx})`) : ''}
                         </div>
                     </div>`).join('')}
             </div>
         </div>`).join('')
         : '<p class="section-description">Nenhum grupo de senhas cadastrado.</p>';
-    html += btnAdm('fa-plus','Novo Grupo','adicionarGrupoSenha()');
+    if (window._can.adicionar) html += btnAdm('fa-plus','Novo Grupo','adicionarGrupoSenha()');
     container.innerHTML = html;
 }
 
@@ -183,8 +183,8 @@ function gerarPainelOLTs() {
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
                 <div class="olt-name">${escapeHTML(olt.nome)}</div>
                 <div style="display:flex;gap:4px;flex-shrink:0">
-                    ${window._isAdmin ? btnAdm('fa-pen','',`editarOLT('${olt.id}')`) : ''}
-                    ${btnAdm('fa-trash','',`deletarOLT('${olt.id}','${escaparAttr(olt.nome)}')`)}
+                    ${window._can.editar ? btnAdm('fa-pen','',`editarOLT('${olt.id}')`) : ''}
+                    ${window._can.moverLixeira ? btnAdm('fa-trash','',`deletarOLT('${olt.id}','${escaparAttr(olt.nome)}')`) : ''}
                 </div>
             </div>
             <div class="olt-details">
@@ -207,7 +207,7 @@ function gerarPainelOLTs() {
         </div>`;
     }).join('')
         : '<p>Nenhuma OLT cadastrada.</p>';
-    html += btnAdm('fa-plus','Adicionar OLT','adicionarOLT()');
+    if (window._can.adicionar) html += btnAdm('fa-plus','Adicionar OLT','adicionarOLT()');
     container.innerHTML = html;
 }
 
@@ -222,8 +222,8 @@ function gerarPainelVLANs() {
                     ${local.criadoPor ? `<span class="item-autor" style="font-size:10px">por ${escapeHTML(local.criadoPor)}</span>` : ''}
                 </div>
                 <div style="display:flex;gap:4px">
-                    ${btnAdm('fa-plus','',`adicionarPON('${local.id}')`)} ${window._isAdmin ? btnAdm('fa-pen','',`editarVLANLocal('${local.id}')`) : ''}
-                    ${btnAdm('fa-trash','',`deletarVLANLocal('${local.id}','${escaparAttr(local.nome)}')`)}
+                    ${window._can.adicionar ? btnAdm('fa-plus','',`adicionarPON('${local.id}')`) : ''} ${window._can.editar ? btnAdm('fa-pen','',`editarVLANLocal('${local.id}')`) : ''}
+                    ${window._can.moverLixeira ? btnAdm('fa-trash','',`deletarVLANLocal('${local.id}','${escaparAttr(local.nome)}')`) : ''}
                 </div>
             </div>
             <ul class="vlan-list">
@@ -234,13 +234,13 @@ function gerarPainelVLANs() {
                             <span class="vlan-badge">VLAN ${escapeHTML(pon.vlan)}</span>
                         </div>
                         <i class="fas fa-copy vlan-copy-icon" onclick="copiarTexto('${escaparAttr(pon.vlan)}')"></i>
-                        ${window._isAdmin ? btnAdm('fa-pen','',`editarPON('${local.id}',${idx})`) : ''}
-                        ${btnAdm('fa-trash','',`deletarPON('${local.id}',${idx})`)}
+                        ${window._can.editar ? btnAdm('fa-pen','',`editarPON('${local.id}',${idx})`) : ''}
+                        ${window._can.moverLixeira ? btnAdm('fa-trash','',`deletarPON('${local.id}',${idx})`) : ''}
                     </li>`).join('')}
             </ul>
         </div>`).join('')
         : '<p class="section-description">Nenhuma VLAN cadastrada.</p>';
-    html += btnAdm('fa-plus','Nova Localização','adicionarVLANLocal()');
+    if (window._can.adicionar) html += btnAdm('fa-plus','Nova Localização','adicionarVLANLocal()');
     container.innerHTML = html;
 }
 
@@ -248,7 +248,7 @@ function gerarPainelPresets() {
     const container = document.getElementById('presets-content');
     if (!dadosApp.presets.length) {
         container.innerHTML = '<p style="color:var(--surface-500);text-align:center;padding:2rem;font-style:italic">Nenhum preset cadastrado.</p>'
-            + btnAdm('fa-plus','Nova Seção','adicionarPresetFab()');
+            + (window._can.adicionar ? btnAdm('fa-plus','Nova Seção','adicionarPresetFab()') : '');
         return;
     }
 
@@ -260,8 +260,8 @@ function gerarPainelPresets() {
             + '<button class="ps-chip' + (noFs ? ' ps-chip--warn' : '') + '" onclick="verInfoArquivo(\'' + fab.id + '\',' + rIdx + ',' + aIdx + ')" title="' + escaparAttr(titulo) + '">'
             + '<i class="fas fa-info-circle ps-chip-icon"></i>' + escapeHTML(label)
             + '</button>'
-            + (window._isAdmin ? btnAdm('fa-pen','','editarPresetArq(\'' + fab.id + '\',' + rIdx + ',' + aIdx + ')') : '')
-            + btnAdm('fa-trash','','deletarPresetArq(\'' + fab.id + '\',' + rIdx + ',' + aIdx + ')')
+            + (window._can.editar ? btnAdm('fa-pen','','editarPresetArq(\'' + fab.id + '\',' + rIdx + ',' + aIdx + ')') : '')
+            + (window._can.moverLixeira ? btnAdm('fa-trash','','deletarPresetArq(\'' + fab.id + '\',' + rIdx + ',' + aIdx + ')') : '')
             + '</div>';
     };
 
@@ -271,8 +271,8 @@ function gerarPainelPresets() {
                 ? rot.arquivos.map((arq, aIdx) => _chip(fab, rIdx, arq, aIdx)).join('')
                 : '<span class="ps-vazio">sem arquivos</span>';
             const admRot = '<div class="ps-adm">'
-                + btnAdm('fa-plus','','adicionarPresetArq(\'' + fab.id + '\',' + rIdx + ')') + (window._isAdmin ? btnAdm('fa-pen','','editarPresetRot(\'' + fab.id + '\',' + rIdx + ')') : '')
-                + btnAdm('fa-trash','','deletarPresetRot(\'' + fab.id + '\',' + rIdx + ')')
+                + (window._can.adicionar ? btnAdm('fa-plus','','adicionarPresetArq(\'' + fab.id + '\',' + rIdx + ')') : '') + (window._can.editar ? btnAdm('fa-pen','','editarPresetRot(\'' + fab.id + '\',' + rIdx + ')') : '')
+                + (window._can.moverLixeira ? btnAdm('fa-trash','','deletarPresetRot(\'' + fab.id + '\',' + rIdx + ')') : '')
                 + '</div>';
             return '<div class="ps-modelo">'
                 + '<div class="ps-modelo-nome"><span class="ps-modelo-dot"></span><span class="ps-modelo-label" title="' + escaparAttr(rot.modelo) + '">' + escapeHTML(rot.modelo) + '</span></div>'
@@ -283,8 +283,8 @@ function gerarPainelPresets() {
         }).join('');
 
         const admFab = '<div class="ps-adm">'
-            + btnAdm('fa-plus','','adicionarPresetRot(\'' + fab.id + '\')') + (window._isAdmin ? btnAdm('fa-pen','','editarPresetFab(\'' + fab.id + '\')') : '')
-            + btnAdm('fa-trash','','deletarPresetFab(\'' + fab.id + '\',\'' + escaparAttr(fab.nome) + '\')')
+            + (window._can.adicionar ? btnAdm('fa-plus','','adicionarPresetRot(\'' + fab.id + '\')') : '') + (window._can.editar ? btnAdm('fa-pen','','editarPresetFab(\'' + fab.id + '\')') : '')
+            + (window._can.moverLixeira ? btnAdm('fa-trash','','deletarPresetFab(\'' + fab.id + '\',\'' + escaparAttr(fab.nome) + '\')') : '')
             + '</div>';
 
         return '<div class="ps-bloco">'
@@ -296,7 +296,7 @@ function gerarPainelPresets() {
             + '</div>';
     }).join('');
 
-    html += btnAdm('fa-plus','Nova Seção','adicionarPresetFab()');
+    if (window._can.adicionar) html += btnAdm('fa-plus','Nova Seção','adicionarPresetFab()');
     container.innerHTML = html;
 }
 
@@ -1052,7 +1052,7 @@ async function carregarLixeira() {
 
 function renderizarLixeira() {
     const container = document.getElementById('lixeiraContent');
-    const visiveis = _lixeiraItems.filter(i => !i.restaurado || window._isSuperAdmin);
+    const visiveis = _lixeiraItems.filter(i => !i.restaurado || window._can.apagarPermanente);
     if (!visiveis.length) {
         container.innerHTML = '<p style="color:#64748b;text-align:center;padding:2rem;font-style:italic">Lixeira vazia</p>';
         return;
@@ -1066,8 +1066,8 @@ function renderizarLixeira() {
                 <div class="lixeira-meta">${escapeHTML(item.categoria)} · ${data}${item.deletadoPor ? ' · ' + escapeHTML(item.deletadoPor) : ''}</div>
             </div>
             <div class="lixeira-actions">
-                ${!restaurado ? `<button class="adm-btn" onclick="restaurarItem('${item.id}')"><i class="fas fa-undo"></i> Restaurar</button>` : ''}
-                ${window._isSuperAdmin ? `<button class="adm-btn adm-del" onclick="deletarDefinitivo('${item.id}','${escaparAttr(item.nome)}')" title="Apagar permanentemente"><i class="fas fa-skull"></i></button>` : ''}
+                ${!restaurado && window._can.restaurar ? `<button class="adm-btn" onclick="restaurarItem('${item.id}')"><i class="fas fa-undo"></i> Restaurar</button>` : ''}
+                ${window._can.apagarPermanente ? `<button class="adm-btn adm-del" onclick="deletarDefinitivo('${item.id}','${escaparAttr(item.nome)}')" title="Apagar permanentemente"><i class="fas fa-skull"></i></button>` : ''}
             </div>
         </div>`;
     }).join('');

@@ -29,7 +29,7 @@ function showSection(sectionId) {
     target.style.display = 'block';
 
     if (sectionId === 'admin-section') {
-        if (window._isAdmin) {
+        if (window._can.painelAdm) {
             mostrarPainelAdmin();
             carregarSolicitacoesAdmin();
         } else {

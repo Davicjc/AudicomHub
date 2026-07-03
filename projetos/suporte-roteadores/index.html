@@ -14,6 +14,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
     <script src="../../shared/firebase-init.js"></script>
     <script src="../../shared/auth-guard.js"></script>
+    <script src="../../shared/permissions.js"></script>
 </head>
 <body>
 
@@ -70,7 +71,7 @@
 
                 <div class="nav-section-label" style="margin-top: 20px;">Ferramentas</div>
                 
-                <div class="tab-wrapper">
+                <div class="tab-wrapper" id="btnLixeiraTab" style="display:none">
                     <button class="tab-btn" onclick="abrirLixeira()" style="color: #ef4444;">
                         <div class="nav-icon"><i class="fas fa-trash-alt"></i></div>
                         <span>Lixeira</span>
@@ -213,7 +214,7 @@
                 <h3 style="margin:0;color:#f1f5f9;font-size:1.1rem"><i class="fas fa-trash-alt" style="color:#ef4444;margin-right:8px"></i> Lixeira</h3>
                 <button onclick="fecharLixeira()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:18px;padding:4px"><i class="fas fa-times"></i></button>
             </div>
-            <p style="font-size:12px;color:#64748b;margin:0 0 16px;flex-shrink:0">Qualquer usuário pode restaurar itens. Apenas o super admin pode apagar permanentemente.</p>
+            <p style="font-size:12px;color:#64748b;margin:0 0 16px;flex-shrink:0">Restaurar e apagar permanentemente dependem das permissões do seu usuário.</p>
             <div id="lixeiraContent" style="overflow-y:auto;flex:1"></div>
         </div>
     </div>
@@ -278,9 +279,13 @@
             window._isAdmin     = userData.role === 'superadmin' || userData.role === 'admin';
             window._isSuperAdmin = userData.role === 'superadmin';
             window._userEmail   = user.email;
-            
+            window._can         = resolverPermissoes(userData, 'suporte-roteadores');
+
             document.getElementById('appContent').style.display = 'flex';
-            
+            if (window._can.moverLixeira || window._can.restaurar || window._can.apagarPermanente) {
+                document.getElementById('btnLixeiraTab').style.display = '';
+            }
+
             if (typeof iniciarApp === 'function') {
                 iniciarApp();
                 setTimeout(() => window.mostrarPainelEspecifico("dns"), 100);

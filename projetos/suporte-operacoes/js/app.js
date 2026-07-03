@@ -47,12 +47,16 @@ function renderizarAbas() {
         const idx = abasCarregadas.indexOf(aba);
         const total = abasCarregadas.length;
         let btns = '';
-        if (window._isAdmin) {
+        if (window._can.reordenarAbas) {
             btns += `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','up')" title="Subir" ${idx===0?'disabled style="opacity:.3"':''}><i class="fas fa-arrow-up"></i></button>`
-                  + `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','down')" title="Descer" ${idx===total-1?'disabled style="opacity:.3"':''}><i class="fas fa-arrow-down"></i></button>`
-                  + `<button class="tab-adm-icon" onclick="editarAba('${aba.id}')" title="Editar"><i class="fas fa-pen"></i></button>`;
+                  + `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','down')" title="Descer" ${idx===total-1?'disabled style="opacity:.3"':''}><i class="fas fa-arrow-down"></i></button>`;
         }
-        btns += `<button class="tab-adm-icon tab-adm-del" onclick="deletarAba('${aba.id}','${_escaparAttrOps(aba.title)}')" title="Lixeira"><i class="fas fa-trash"></i></button>`;
+        if (window._can.editar) {
+            btns += `<button class="tab-adm-icon" onclick="editarAba('${aba.id}')" title="Editar"><i class="fas fa-pen"></i></button>`;
+        }
+        if (window._can.moverLixeira) {
+            btns += `<button class="tab-adm-icon tab-adm-del" onclick="deletarAba('${aba.id}','${_escaparAttrOps(aba.title)}')" title="Lixeira"><i class="fas fa-trash"></i></button>`;
+        }
         adm.innerHTML = btns;
 
         wrapper.appendChild(btn);
@@ -61,7 +65,7 @@ function renderizarAbas() {
     });
 
     // botão migrar: detecta steps sem isBase64 via flag na aba
-    if (window._isAdmin) {
+    if (window._can.migrar) {
         const locais = abasCarregadas.filter(a => a.folder);
         const btn = document.getElementById('btnMigrar');
         if (btn) btn.style.display = locais.length ? 'flex' : 'none';
@@ -90,13 +94,13 @@ async function selecionarAba(id) {
                 </div>
             </div>
             <div class="tutorial-header-actions">
-                <button class="tut-action-btn" onclick="abrirModalAddImg('${id}')"><i class="fas fa-plus"></i> Adicionar Imagens</button>
+                ${window._can.adicionar ? `<button class="tut-action-btn" onclick="abrirModalAddImg('${id}')"><i class="fas fa-plus"></i> Adicionar Imagens</button>` : ''}
             </div>
         </div>`;
 
     if (aba.tipo === 'text') {
         const editBtn = `<div class="tutorial-header-actions">
-                <button class="tut-action-btn" onclick="editarConteudoTexto('${id}')"><i class="fas fa-plus"></i> Adicionar Conteúdo</button>
+                ${window._can.adicionar ? `<button class="tut-action-btn" onclick="editarConteudoTexto('${id}')"><i class="fas fa-plus"></i> Adicionar Conteúdo</button>` : ''}
                </div>`;
         const headerTexto = `
             <div class="tutorial-header">
@@ -122,12 +126,14 @@ async function selecionarAba(id) {
         const isFirst = idx === 0;
         const isLast  = idx === steps.length - 1;
         return `<div class="step-adm-overlay">
+            ${window._can.reordenarItens ? `
                 <button class="step-adm-btn" onclick="moverStep('${id}','${stepId}','up')"   title="Subir"   ${isFirst?'disabled style="opacity:.3;cursor:default"':''}><i class="fas fa-arrow-up"></i></button>
                 <button class="step-adm-btn" onclick="moverStep('${id}','${stepId}','down')" title="Descer"  ${isLast ?'disabled style="opacity:.3;cursor:default"':''}><i class="fas fa-arrow-down"></i></button>
-            ${window._isAdmin ? `
+            ` : ''}
+            ${window._can.editar ? `
                 <button class="step-adm-btn" onclick="editarStep('${id}','${stepId}')"       title="Editar"><i class="fas fa-pen"></i></button>
             ` : ''}
-            <button class="step-adm-btn step-adm-del" onclick="deletarStep('${id}','${stepId}','${_escaparAttrOps(stepTitle||'Passo '+(idx+1))}')" title="Lixeira"><i class="fas fa-trash"></i></button>
+            ${window._can.moverLixeira ? `<button class="step-adm-btn step-adm-del" onclick="deletarStep('${id}','${stepId}','${_escaparAttrOps(stepTitle||'Passo '+(idx+1))}')" title="Lixeira"><i class="fas fa-trash"></i></button>` : ''}
         </div>`;
     };
 
@@ -688,7 +694,7 @@ async function carregarLixeiraOps() {
 
 function renderizarLixeiraOps() {
     const container = document.getElementById('lixeiraOpsContent');
-    const visiveis = _lixeiraOpsItems.filter(i => !i.restaurado || window._isSuperAdmin);
+    const visiveis = _lixeiraOpsItems.filter(i => !i.restaurado || window._can.apagarPermanente);
     if (!visiveis.length) {
         container.innerHTML = '<p style="color:#64748b;text-align:center;padding:2rem;font-style:italic">Lixeira vazia</p>';
         return;
@@ -702,8 +708,8 @@ function renderizarLixeiraOps() {
                 <div class="lixeira-meta">${escapeHTML(item.categoria)} · ${data}${item.deletadoPor ? ' · ' + escapeHTML(item.deletadoPor) : ''}</div>
             </div>
             <div class="lixeira-actions">
-                ${!restaurado ? `<button class="lixeira-btn-action" onclick="restaurarItemOps('${item.id}')"><i class="fas fa-undo"></i> Restaurar</button>` : ''}
-                ${window._isSuperAdmin ? `<button class="lixeira-btn-action lixeira-btn-del" onclick="deletarDefinitivoOps('${item.id}','${_escaparAttrOps(item.nome)}')" title="Apagar permanentemente"><i class="fas fa-skull"></i></button>` : ''}
+                ${!restaurado && window._can.restaurar ? `<button class="lixeira-btn-action" onclick="restaurarItemOps('${item.id}')"><i class="fas fa-undo"></i> Restaurar</button>` : ''}
+                ${window._can.apagarPermanente ? `<button class="lixeira-btn-action lixeira-btn-del" onclick="deletarDefinitivoOps('${item.id}','${_escaparAttrOps(item.nome)}')" title="Apagar permanentemente"><i class="fas fa-skull"></i></button>` : ''}
             </div>
         </div>`;
     }).join('');

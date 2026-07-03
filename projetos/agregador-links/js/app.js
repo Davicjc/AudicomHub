@@ -70,15 +70,17 @@ function renderizarAbas() {
         const adm = document.createElement('div');
         adm.className = 'tab-adm-btns';
         const total = abasCarregadas.length;
-        // Reordenar aba (mover posição): todos os usuários
-        let btns = `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','up')" title="Subir" ${idx === 0 ? 'disabled style="opacity:.3"' : ''}><i class="fas fa-arrow-up"></i></button>`
-                 + `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','down')" title="Descer" ${idx === total - 1 ? 'disabled style="opacity:.3"' : ''}><i class="fas fa-arrow-down"></i></button>`;
-        // Editar aba: apenas admin (visual)
-        if (window._isAdmin) {
+        let btns = '';
+        if (window._can.reordenarAbas) {
+            btns += `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','up')" title="Subir" ${idx === 0 ? 'disabled style="opacity:.3"' : ''}><i class="fas fa-arrow-up"></i></button>`
+                  + `<button class="tab-adm-icon" onclick="moverAba('${aba.id}','down')" title="Descer" ${idx === total - 1 ? 'disabled style="opacity:.3"' : ''}><i class="fas fa-arrow-down"></i></button>`;
+        }
+        if (window._can.editar) {
             btns += `<button class="tab-adm-icon" onclick="editarAba('${aba.id}')" title="Editar"><i class="fas fa-pen"></i></button>`;
         }
-        // Lixeira (excluir): todos os usuários
-        btns += `<button class="tab-adm-icon tab-adm-del" onclick="deletarAba('${aba.id}','${escaparAttr(aba.title)}')" title="Mover aba para lixeira"><i class="fas fa-trash"></i></button>`;
+        if (window._can.moverLixeira) {
+            btns += `<button class="tab-adm-icon tab-adm-del" onclick="deletarAba('${aba.id}','${escaparAttr(aba.title)}')" title="Mover aba para lixeira"><i class="fas fa-trash"></i></button>`;
+        }
         adm.innerHTML = btns;
 
         wrapper.appendChild(btn);
@@ -107,7 +109,7 @@ async function selecionarAba(id) {
                 </div>
             </div>
             <div class="tutorial-header-actions">
-                <button class="tut-action-btn" onclick="abrirModalNovoLink('${id}')"><i class="fas fa-plus"></i> Adicionar Link</button>
+                ${window._can.adicionar ? `<button class="tut-action-btn" onclick="abrirModalNovoLink('${id}')"><i class="fas fa-plus"></i> Adicionar Link</button>` : ''}
             </div>
         </div>`;
 
@@ -171,13 +173,13 @@ function renderizarGridLinks(abaId) {
             ? `<img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64" alt="" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-link\\'></i>'">`
             : `<i class="fas fa-link"></i>`;
 
-        // Overlay: reordenar (todos) · editar (admin) · lixeira (todos)
         const overlay = `
             <div class="link-adm-overlay">
+                ${window._can.reordenarItens ? `
                 <button class="link-adm-btn" onclick="moverLink('${abaId}','${l.id}','up')"   title="Subir"  ${first ? 'disabled style="opacity:.3;cursor:default"' : ''}><i class="fas fa-arrow-up"></i></button>
-                <button class="link-adm-btn" onclick="moverLink('${abaId}','${l.id}','down')" title="Descer" ${last ? 'disabled style="opacity:.3;cursor:default"' : ''}><i class="fas fa-arrow-down"></i></button>
-                ${window._isAdmin ? `<button class="link-adm-btn" onclick="editarLink('${abaId}','${l.id}')" title="Editar"><i class="fas fa-pen"></i></button>` : ''}
-                <button class="link-adm-btn link-adm-del" onclick="deletarLink('${abaId}','${l.id}','${escaparAttr(l.titulo || 'Link')}')" title="Mover para lixeira"><i class="fas fa-trash"></i></button>
+                <button class="link-adm-btn" onclick="moverLink('${abaId}','${l.id}','down')" title="Descer" ${last ? 'disabled style="opacity:.3;cursor:default"' : ''}><i class="fas fa-arrow-down"></i></button>` : ''}
+                ${window._can.editar ? `<button class="link-adm-btn" onclick="editarLink('${abaId}','${l.id}')" title="Editar"><i class="fas fa-pen"></i></button>` : ''}
+                ${window._can.moverLixeira ? `<button class="link-adm-btn link-adm-del" onclick="deletarLink('${abaId}','${l.id}','${escaparAttr(l.titulo || 'Link')}')" title="Mover para lixeira"><i class="fas fa-trash"></i></button>` : ''}
             </div>`;
 
         return `
@@ -457,7 +459,7 @@ async function carregarLixeira() {
 
 function renderizarLixeira() {
     const container = document.getElementById('lixeiraContent');
-    const visiveis = _lixeiraItems.filter(i => !i.restaurado || window._isSuperAdmin);
+    const visiveis = _lixeiraItems.filter(i => !i.restaurado || window._can.apagarPermanente);
     if (!visiveis.length) {
         container.innerHTML = '<p style="color:var(--text-3);text-align:center;padding:2rem;font-style:italic">Lixeira vazia</p>';
         return;
@@ -471,8 +473,8 @@ function renderizarLixeira() {
                 <div class="lixeira-meta">${escapeHTML(item.categoria)} · ${data}${item.deletadoPor ? ' · ' + escapeHTML(item.deletadoPor) : ''}</div>
             </div>
             <div class="lixeira-actions">
-                ${!restaurado ? `<button class="lixeira-btn-action" onclick="restaurarItem('${item.id}')"><i class="fas fa-undo"></i> Restaurar</button>` : ''}
-                ${window._isSuperAdmin ? `<button class="lixeira-btn-action lixeira-btn-del" onclick="deletarDefinitivo('${item.id}','${escaparAttr(item.nome)}')" title="Apagar permanentemente"><i class="fas fa-skull"></i></button>` : ''}
+                ${!restaurado && window._can.restaurar ? `<button class="lixeira-btn-action" onclick="restaurarItem('${item.id}')"><i class="fas fa-undo"></i> Restaurar</button>` : ''}
+                ${window._can.apagarPermanente ? `<button class="lixeira-btn-action lixeira-btn-del" onclick="deletarDefinitivo('${item.id}','${escaparAttr(item.nome)}')" title="Apagar permanentemente"><i class="fas fa-skull"></i></button>` : ''}
             </div>
         </div>`;
     }).join('');

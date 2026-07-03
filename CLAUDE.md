@@ -8,24 +8,45 @@
 ## Roles
 | role | pode fazer |
 |---|---|
-| `user` | lê os projetos que têm acesso, pode soft-delete |
-| `admin` | lê e escreve em tudo, não pode apagar permanente |
-| `superadmin` | tudo, incluindo apagar permanentemente |
+| `user` | acessa os projetos liberados em `projects`; dentro de cada projeto, o que pode fazer é definido pelas **permissões granulares** (`users/{uid}.permissions`) |
+| `admin` | acesso total a tudo, **incluindo apagar permanentemente** |
+| `superadmin` | idem admin + papel irrevogável, gerencia admins e cria usuários admin |
 
 ## Modelo de segurança
 
 **Firebase Rules**: qualquer usuário autenticado (login + senha) tem acesso total ao Firestore. Não há restrição por role no banco.
 
-**UI (HTML/JS)**: as restrições de role (user/admin/superadmin) são aplicadas **apenas visualmente** — mostrando ou ocultando botões no HTML. Funções JS **não** devem ter `if (!window._isAdmin) return;` no corpo.
+**UI (HTML/JS)**: as restrições de role e de permissões granulares são aplicadas **apenas visualmente** — mostrando ou ocultando botões no HTML. Funções JS **não** devem ter `if (!window._isAdmin) return;` no corpo. (Única exceção documentada: o guard de navegação `showSection('admin-section')` em solicitação-manutenções.)
+
+## Permissões granulares (`window._can`)
+
+Catálogo central em `shared/permissions.js` (`PERMISSOES_CATALOGO` + `resolverPermissoes`). Modelo no Firestore:
+```js
+users/{uid}.permissions = {
+  'suporte-roteadores':      { adicionar, editar, moverLixeira, restaurar, apagarPermanente },
+  'suporte-operacoes':       { adicionar, editar, reordenarItens, reordenarAbas, moverLixeira, restaurar, apagarPermanente, migrar },
+  'agregador-links':         { adicionar, editar, reordenarItens, reordenarAbas, moverLixeira, restaurar, apagarPermanente },
+  'solicitacao-manutencoes': { criar, painelAdm }
+}
+```
+Regras do resolver:
+- role `admin`/`superadmin` → tudo `true` (acesso total)
+- chave salva em `permissions[projId]` → usa o valor salvo
+- `painelAdm` ausente → fallback legado `adminProjects['solicitacao-manutencoes']`
+- chave ausente → default do catálogo (= comportamento legado do projeto)
+- `apagarPermanente: true` **implica** `moverLixeira: true` (auto-check na UI do admin + garantia no resolver)
+
+O painel `admin.html` grava `permissions` apenas para role `user` (não grava/apaga para admin — preserva para eventual rebaixamento) e espelha `painelAdm` de volta em `adminProjects` (compat). **Todo projeto novo deve registrar suas chaves no `PERMISSOES_CATALOGO`** e carregar `shared/permissions.js` após o auth-guard.
 
 ## Padrão de projeto (OBRIGATÓRIO)
 
 Todo projeto novo deve seguir este padrão — já aplicado em `suporte-roteadores` e `suporte-operacoes`.
 
 ### Lixeira (soft-delete)
-- Qualquer usuário com acesso ao projeto pode **mover para lixeira**
-- Qualquer usuário pode **restaurar** da lixeira
-- Apenas **superadmin** pode **apagar permanentemente**
+- **Mover para lixeira**: `window._can.moverLixeira` (default: liberado)
+- **Restaurar**: `window._can.restaurar` (default: liberado)
+- **Apagar permanentemente**: `window._can.apagarPermanente` (default: negado para `user`; admin/superadmin sempre podem)
+- Itens já restaurados só aparecem na lista para quem tem `apagarPermanente`
 - A lixeira de cada projeto fica em uma coleção top-level: `lixeira-{nome-projeto}`
 
 ### Firebase Rules (template)
@@ -50,6 +71,7 @@ criadoEm: new Date().toISOString()
 window._isAdmin      // admin ou superadmin
 window._isSuperAdmin // só superadmin
 window._userEmail    // email do usuário logado
+window._can          // permissões granulares resolvidas para o projeto
 ```
 
 ### Padrão de init em cada página
@@ -58,17 +80,19 @@ requireAuth('nome-projeto').then(({ user, userData }) => {
     window._isAdmin      = userData.role === 'superadmin' || userData.role === 'admin';
     window._isSuperAdmin = userData.role === 'superadmin';
     window._userEmail    = user.email;
+    window._can          = resolverPermissoes(userData, 'nome-projeto');
     // ...
 });
 ```
 
 ### UI: botões de ação por permissão (apenas visual — sem guards JS no corpo da função)
-- **Adicionar** (novo item, conteúdo, ou nova aba/tutorial): todos os usuários — sem condicional. `criadoPor: window._userEmail` obrigatório
-- **Reordenar cards/itens** (↑↓ dentro de uma aba): todos os usuários — sem condicional
-- **Editar conteúdo existente**: mostrar botão apenas se `window._isAdmin` (mas sem `return` no corpo da função)
-- **Reordenar abas/seções** (ordem da navegação lateral): mostrar botão apenas se `window._isAdmin`
-- **Lixeira (soft-delete)**: todos os usuários — sem condicional
-- **Apagar permanente (na lixeira)**: mostrar botão apenas se `window._isSuperAdmin`
+- **Adicionar** (novo item, conteúdo, ou nova aba/tutorial): mostrar se `window._can.adicionar`. `criadoPor: window._userEmail` obrigatório
+- **Reordenar cards/itens** (↑↓ dentro de uma aba): mostrar se `window._can.reordenarItens`
+- **Editar conteúdo existente**: mostrar botão apenas se `window._can.editar`
+- **Reordenar abas/seções** (ordem da navegação lateral): mostrar se `window._can.reordenarAbas`
+- **Lixeira (soft-delete)**: mostrar se `window._can.moverLixeira`; restaurar se `window._can.restaurar`
+- **Apagar permanente (na lixeira)**: mostrar botão apenas se `window._can.apagarPermanente`
+- Botões fixos no HTML (ex.: lixeira/nova aba na sidebar) começam com `display:none` e são revelados no init conforme `window._can`
 
 ### Ordem obrigatória no soft-delete
 Sempre gravar na lixeira **PRIMEIRO**, depois marcar `deletado: true` no doc original:

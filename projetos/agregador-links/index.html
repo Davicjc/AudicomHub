@@ -13,6 +13,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
     <script src="../../shared/firebase-init.js"></script>
     <script src="../../shared/auth-guard.js"></script>
+    <script src="../../shared/permissions.js"></script>
 </head>
 <body>
 
@@ -40,10 +41,10 @@
                 <button onclick="window.location.reload(true)" class="sidebar-btn">
                     <i class="fas fa-sync-alt"></i> Verificar Updates
                 </button>
-                <button onclick="abrirLixeiraLinks()" class="sidebar-btn s-danger">
+                <button id="btnLixeiraLinks" onclick="abrirLixeiraLinks()" class="sidebar-btn s-danger" style="display:none">
                     <i class="fas fa-trash-alt"></i> Lixeira
                 </button>
-                <button id="btnNovaAba" class="sidebar-btn s-primary">
+                <button id="btnNovaAba" class="sidebar-btn s-primary" style="display:none">
                     <i class="fas fa-plus"></i> Nova Aba
                 </button>
             </div>
@@ -111,7 +112,7 @@
                 <h3 style="margin:0"><i class="fas fa-trash-alt" style="color:#ef4444"></i> Lixeira — Links</h3>
                 <button class="modal-close" onclick="fecharLixeiraLinks()"><i class="fas fa-times"></i></button>
             </div>
-            <p style="font-size:12px;color:var(--text-3);margin:0 0 16px;flex-shrink:0">Qualquer usuário pode restaurar. Apenas o super admin pode apagar permanentemente.</p>
+            <p style="font-size:12px;color:var(--text-3);margin:0 0 16px;flex-shrink:0">Restaurar e apagar permanentemente dependem das permissões do seu usuário.</p>
             <div id="lixeiraContent" style="overflow-y:auto;flex:1;max-height:60vh"></div>
         </div>
     </div>
@@ -122,9 +123,15 @@
             window._isAdmin      = userData.role === 'superadmin' || userData.role === 'admin';
             window._isSuperAdmin = userData.role === 'superadmin';
             window._userEmail    = user.email;
+            window._can          = resolverPermissoes(userData, 'agregador-links');
             document.getElementById('appContent').style.display = 'flex';
-            // Nova Aba: todos os usuários podem criar (apenas visual — sem guard no corpo)
-            document.getElementById('btnNovaAba').addEventListener('click', abrirModalNovaAba);
+            if (window._can.adicionar) {
+                document.getElementById('btnNovaAba').style.display = '';
+                document.getElementById('btnNovaAba').addEventListener('click', abrirModalNovaAba);
+            }
+            if (window._can.moverLixeira || window._can.restaurar || window._can.apagarPermanente) {
+                document.getElementById('btnLixeiraLinks').style.display = '';
+            }
             iniciarLinks();
         });
     </script>

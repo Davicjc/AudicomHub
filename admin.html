@@ -11,6 +11,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
   <script src="shared/firebase-init.js"></script>
   <script src="shared/auth-guard.js"></script>
+  <script src="shared/permissions.js"></script>
   <script src="shared/utils.js"></script>
 
   <style>
@@ -115,6 +116,24 @@
     .access-chip.active { background: var(--accent-dim); border-color: rgba(59,130,246,0.4); }
     .access-chip input { display: none; }
     .access-chip-name { font-size: 13px; }
+
+    /* ── Permissões granulares por projeto ── */
+    .perm-proj-block { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; }
+    .perm-sub {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 6px 14px;
+      padding: 10px 14px;
+      margin-left: 14px;
+      background: rgba(255,255,255,0.02);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .perm-cb-label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); cursor: pointer; }
+    .perm-cb-label input { accent-color: var(--accent); }
+    .perm-cb-label input:disabled + span { opacity: .55; }
+    .perm-none { font-size: 12px; color: var(--muted); font-style: italic; }
+    .perms-hidden .perm-sub { display: none !important; }
   </style>
 </head>
 <body>
@@ -239,14 +258,11 @@
       </div>
 
       <div class="form-group mt-16">
-        <label>Acesso aos projetos</label>
+        <label>Acesso aos projetos e permissões</label>
+        <p class="text-muted text-sm mt-4" id="permAccessTotalNote" style="display:none">
+          <i class="fas fa-check-double"></i> Acesso total — admins têm todas as permissões em todos os projetos.
+        </p>
         <div class="proj-access-grid" id="projAccessGrid"></div>
-      </div>
-
-      <div class="form-group mt-16">
-        <label>Permissões Administrativas Específicas</label>
-        <p class="text-muted text-sm mt-4">Concede acesso às abas de administração dentro do respectivo projeto.</p>
-        <div class="proj-access-grid" id="projAdminAccessGrid"></div>
       </div>
 
       <div class="modal-footer">
@@ -306,7 +322,10 @@
       <div id="senhaMatchMsg" style="font-size:12px;margin-top:4px;min-height:16px"></div>
 
       <div class="form-group mt-16">
-        <label>Acesso aos projetos</label>
+        <label>Acesso aos projetos e permissões</label>
+        <p class="text-muted text-sm mt-4" id="permAccessTotalNoteNew" style="display:none">
+          <i class="fas fa-check-double"></i> Acesso total — admins têm todas as permissões em todos os projetos.
+        </p>
         <div class="proj-access-grid" id="newUserProjGrid"></div>
       </div>
 
@@ -509,12 +528,21 @@
             const projs = [];
             allProjects.forEach(p => {
                 const isNormal = u.projects && u.projects[p.id];
-                const isAdm = u.adminProjects && u.adminProjects[p.id];
-                
+                const canP = resolverPermissoes(u, p.id);
+                const isAdm = !!canP.painelAdm;
+
+                // ícone de permissões personalizadas + resumo no tooltip
+                let customIcon = '';
+                const cat = (typeof PERMISSOES_CATALOGO !== 'undefined' && PERMISSOES_CATALOGO[p.id]) || {};
+                if (u.permissions && u.permissions[p.id] && Object.keys(cat).length) {
+                    const resumo = Object.keys(cat).map(k => `${cat[k].label}: ${canP[k] ? '✓' : '✗'}`).join(' · ');
+                    customIcon = ` <i class="fas fa-sliders" style="margin-left:4px" title="Permissões personalizadas — ${resumo}"></i>`;
+                }
+
                 if (isAdm) {
-                    projs.push(`<span class="badge" style="background:rgba(251, 191, 36, 0.15);color:#fbbf24;font-size:11px;margin-right:4px;margin-bottom:4px;display:inline-block;border:1px solid rgba(251, 191, 36, 0.3)">${p.icon} ${p.name} <i class="fas fa-crown" style="margin-left:4px" title="Admin neste projeto"></i></span>`);
+                    projs.push(`<span class="badge" style="background:rgba(251, 191, 36, 0.15);color:#fbbf24;font-size:11px;margin-right:4px;margin-bottom:4px;display:inline-block;border:1px solid rgba(251, 191, 36, 0.3)">${p.icon} ${p.name} <i class="fas fa-crown" style="margin-left:4px" title="Admin neste projeto"></i>${customIcon}</span>`);
                 } else if (isNormal) {
-                    projs.push(`<span class="badge" style="background:rgba(255,255,255,.05);color:#9ca3af;font-size:11px;margin-right:4px;margin-bottom:4px;display:inline-block;border:1px solid rgba(255,255,255,.1)">${p.icon} ${p.name}</span>`);
+                    projs.push(`<span class="badge" style="background:rgba(255,255,255,.05);color:#9ca3af;font-size:11px;margin-right:4px;margin-bottom:4px;display:inline-block;border:1px solid rgba(255,255,255,.1)">${p.icon} ${p.name}${customIcon}</span>`);
                 }
             });
             acessosHTML = projs.length > 0 ? projs.join('') : '<span style="color:#6b7280;font-size:11px;font-style:italic">Sem acessos</span>';
@@ -550,36 +578,21 @@
       document.getElementById('superAdminNote').style.display = isSuperAdmin ? 'block' : 'none';
       document.getElementById('modalUserTitle').textContent = `Editar: ${u.name || u.email}`;
 
-      // Renderiza chips de projetos
+      // Renderiza chips de projetos + permissões granulares
       const grid = document.getElementById('projAccessGrid');
       grid.innerHTML = '';
       allProjects.forEach(p => {
-        const checked = u.projects && u.projects[p.id] ? 'active' : '';
-        const checkedAttr = u.projects && u.projects[p.id] ? 'checked' : '';
-        grid.innerHTML += `
-          <label class="access-chip ${checked}" id="chip-${p.id}">
-            <input type="checkbox" name="proj" value="${p.id}" ${checkedAttr} onchange="toggleChip(this, 'chip-${p.id}')">
-            <span>${p.icon || '📁'}</span>
-            <span class="access-chip-name">${p.name}</span>
-          </label>`;
+        const acesso = !!(u.projects && u.projects[p.id]);
+        // permissões renderizadas sempre como "user" — se o role atual for admin,
+        // os painéis ficam ocultos, mas os valores salvos são preservados
+        const perms = resolverPermissoes({ ...u, role: 'user' }, p.id);
+        grid.innerHTML += renderChipComPermissoes(p, perms, acesso, 'chip', 'proj');
       });
 
-      
-      // Renderiza chips de admin de projetos
-      const gridAdmin = document.getElementById('projAdminAccessGrid');
-      if (gridAdmin) {
-        gridAdmin.innerHTML = '';
-        allProjects.filter(p => p.id === 'solicitacao-manutencoes').forEach(p => {
-          const checked = u.adminProjects && u.adminProjects[p.id] ? 'active' : '';
-          const checkedAttr = u.adminProjects && u.adminProjects[p.id] ? 'checked' : '';
-          gridAdmin.innerHTML += `
-            <label class="access-chip ${checked}" id="chip-adm-${p.id}">
-              <input type="checkbox" name="projAdm" value="${p.id}" ${checkedAttr} onchange="toggleChip(this, 'chip-adm-${p.id}')">
-              <span><i class="fas fa-crown"></i></span>
-              <span class="access-chip-name">${p.name}</span>
-            </label>`;
-        });
-      }
+      const roleSelect = document.getElementById('editUserRole');
+      roleSelect.onchange = () => atualizarModoPermissoes('editUserRole', 'projAccessGrid', 'permAccessTotalNote');
+      atualizarModoPermissoes('editUserRole', 'projAccessGrid', 'permAccessTotalNote');
+
       abrirModal('modalUser');
     }
 
@@ -587,23 +600,84 @@
       document.getElementById(chipId).classList.toggle('active', checkbox.checked);
     }
 
+    /* ─── Permissões granulares (UI) ────────────────── */
+
+    // Chip de acesso + painel de sub-permissões do projeto
+    function renderChipComPermissoes(p, perms, acesso, prefix, nameAttr) {
+      const chipId  = `${prefix}-${p.id}`;
+      const panelId = `${prefix}-perms-${p.id}`;
+      const cat = (typeof PERMISSOES_CATALOGO !== 'undefined' && PERMISSOES_CATALOGO[p.id]) || {};
+      const chaves = Object.keys(cat);
+
+      let permsHTML;
+      if (chaves.length) {
+        permsHTML = chaves.map(k => {
+          const marcado = !!perms[k];
+          const travado = k === 'moverLixeira' && perms.apagarPermanente; // permanente implica mover
+          const onchange = k === 'apagarPermanente' ? ` onchange="onPermApagarChange(this, '${panelId}')"` : '';
+          return `<label class="perm-cb-label">
+              <input type="checkbox" class="perm-cb" data-proj="${p.id}" data-perm="${k}" ${marcado ? 'checked' : ''} ${travado ? 'disabled' : ''}${onchange}>
+              <span>${cat[k].label}</span>
+            </label>`;
+        }).join('');
+      } else {
+        permsHTML = '<span class="perm-none">Sem opções adicionais — o acesso libera tudo neste sistema.</span>';
+      }
+
+      return `
+        <div class="perm-proj-block">
+          <label class="access-chip ${acesso ? 'active' : ''}" id="${chipId}">
+            <input type="checkbox" name="${nameAttr}" value="${p.id}" ${acesso ? 'checked' : ''} onchange="toggleChipPerm(this, '${chipId}', '${panelId}')">
+            <span>${p.icon || '📁'}</span>
+            <span class="access-chip-name">${p.name}</span>
+          </label>
+          <div class="perm-sub" id="${panelId}" style="display:${acesso ? 'grid' : 'none'}">${permsHTML}</div>
+        </div>`;
+    }
+
+    function toggleChipPerm(checkbox, chipId, panelId) {
+      toggleChip(checkbox, chipId);
+      const panel = document.getElementById(panelId);
+      if (panel) panel.style.display = checkbox.checked ? 'grid' : 'none';
+    }
+
+    // Marcar "apagar permanentemente" habilita e trava "mover p/ lixeira"
+    function onPermApagarChange(cb, panelId) {
+      const mover = document.querySelector(`#${panelId} .perm-cb[data-perm="moverLixeira"]`);
+      if (!mover) return;
+      if (cb.checked) { mover.checked = true; mover.disabled = true; }
+      else { mover.disabled = false; }
+    }
+
+    // Role admin/superadmin → oculta painéis granulares e mostra "Acesso total"
+    function atualizarModoPermissoes(selectId, gridId, noteId) {
+      const role = document.getElementById(selectId).value;
+      const isAdm = role === 'admin' || role === 'superadmin';
+      document.getElementById(gridId).classList.toggle('perms-hidden', isAdm);
+      document.getElementById(noteId).style.display = isAdm ? 'block' : 'none';
+    }
+
+    // Coleta { projId: { chave: bool } } dos painéis renderizados
+    function coletarPermissoes(gridId) {
+      const permissions = {};
+      document.querySelectorAll(`#${gridId} .perm-cb`).forEach(cb => {
+        const proj = cb.dataset.proj;
+        if (!permissions[proj]) permissions[proj] = {};
+        permissions[proj][cb.dataset.perm] = cb.checked;
+      });
+      return permissions;
+    }
+
     async function salvarUsuario() {
       const userId = document.getElementById('editUserId').value;
       const name   = document.getElementById('editUserName').value.trim();
       const role   = document.getElementById('editUserRole').value;
 
-      // Monta objeto de projetos
-      
+      // Monta objeto de projetos (só os chips de acesso — não as sub-permissões)
       const projects = {};
-      document.querySelectorAll('#projAccessGrid input[type=checkbox]').forEach(cb => {
+      document.querySelectorAll('#projAccessGrid input[name=proj]').forEach(cb => {
         projects[cb.value] = cb.checked;
       });
-
-      const adminProjects = {};
-      document.querySelectorAll('#projAdminAccessGrid input[type=checkbox]').forEach(cb => {
-        adminProjects[cb.value] = cb.checked;
-      });
-
 
       // Superadmin não pode ter role alterado
       const snap = await db.collection('users').doc(userId).get();
@@ -616,8 +690,20 @@
         return;
       }
 
+      const updateData = { name, role: finalRole, projects };
+      // Permissões granulares só valem para role "user" — para admin não são
+      // gravadas nem apagadas (preservadas para um eventual rebaixamento)
+      if (finalRole === 'user') {
+        const permissions = coletarPermissoes('projAccessGrid');
+        updateData.permissions = permissions;
+        // espelha painelAdm no campo legado adminProjects (compat)
+        updateData.adminProjects = {
+          'solicitacao-manutencoes': !!(permissions['solicitacao-manutencoes'] && permissions['solicitacao-manutencoes'].painelAdm)
+        };
+      }
+
       try {
-        await db.collection('users').doc(userId).update({ name, role: finalRole, projects, adminProjects });
+        await db.collection('users').doc(userId).update(updateData);
         showToast('Usuário atualizado.', 'success');
         fecharModal('modalUser');
         carregarUsuarios();
@@ -843,17 +929,16 @@
       document.getElementById('senhaMatchMsg').textContent = '';
       document.getElementById('btnCriarUsuario').disabled = false;
 
-      // Chips de projetos — todos desmarcados
+      // Chips de projetos — todos desmarcados, permissões nos defaults do catálogo
       const grid = document.getElementById('newUserProjGrid');
       grid.innerHTML = '';
       allProjects.forEach(p => {
-        grid.innerHTML += `
-          <label class="access-chip" id="nchip-${p.id}">
-            <input type="checkbox" name="newproj" value="${p.id}" onchange="toggleChip(this, 'nchip-${p.id}')">
-            <span>${p.icon || '📁'}</span>
-            <span class="access-chip-name">${p.name}</span>
-          </label>`;
+        const perms = resolverPermissoes({ role: 'user' }, p.id);
+        grid.innerHTML += renderChipComPermissoes(p, perms, false, 'nchip', 'newproj');
       });
+
+      roleSelect.onchange = () => atualizarModoPermissoes('newUserRole', 'newUserProjGrid', 'permAccessTotalNoteNew');
+      atualizarModoPermissoes('newUserRole', 'newUserProjGrid', 'permAccessTotalNoteNew');
 
       // Validação em tempo real das senhas
       const s1 = document.getElementById('newUserSenha');
@@ -895,9 +980,9 @@
       btn.disabled = true;
       btn.textContent = 'Criando…';
 
-      // Monta projetos selecionados
+      // Monta projetos selecionados (só os chips de acesso)
       const projects = {};
-      document.querySelectorAll('#newUserProjGrid input[type=checkbox]').forEach(cb => {
+      document.querySelectorAll('#newUserProjGrid input[name=newproj]').forEach(cb => {
         projects[cb.value] = cb.checked;
       });
 
@@ -911,13 +996,21 @@
         const cred = await secondaryAuth.createUserWithEmailAndPassword(email, senha);
         const uid  = cred.user.uid;
 
-        await db.collection('users').doc(uid).set({
+        const novoDoc = {
           name: nome || email,
           email,
           role,
           projects,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        if (role === 'user') {
+          const permissions = coletarPermissoes('newUserProjGrid');
+          novoDoc.permissions = permissions;
+          novoDoc.adminProjects = {
+            'solicitacao-manutencoes': !!(permissions['solicitacao-manutencoes'] && permissions['solicitacao-manutencoes'].painelAdm)
+          };
+        }
+        await db.collection('users').doc(uid).set(novoDoc);
 
         await secondaryAuth.signOut();
         await secondaryApp.delete();
