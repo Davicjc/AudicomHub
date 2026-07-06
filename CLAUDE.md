@@ -14,7 +14,13 @@
 
 ## Modelo de segurança
 
-**Firebase Rules**: o acesso ao Firestore **não** é concedido só por estar autenticado. Só acessa quem é **membro ativo**: possui o doc `users/{uid}` **e** não está com `bloqueado: true`. Um usuário excluído (doc apagado) ou bloqueado perde acesso ao banco imediatamente, mesmo que a conta do Firebase Auth continue existindo (o front não consegue apagar a conta Auth de outro usuário — exigiria Admin SDK/backend). Exceção nas rules: o usuário sempre pode ler o **próprio** doc, para o front detectar o bloqueio e encerrar a sessão. Não há restrição por **role** no banco — role continua sendo só de UI.
+**Firebase Rules** (`firebase.rules`, publicadas manualmente pelo Console — não há Firebase CLI/`firebase.json` no repo): o acesso ao Firestore **não** é concedido só por estar autenticado. O modelo é em camadas e boa parte é imposta **no banco**, não só na UI:
+1. **Membro ativo** — só acessa quem possui `users/{uid}` **e** não está `bloqueado: true`. Usuário excluído/bloqueado perde acesso na hora (a conta Auth pode continuar existindo; o front não apaga Auth de terceiros). Exceção: o usuário sempre lê o **próprio** doc, para o front detectar o bloqueio e deslogar.
+2. **Isolamento por projeto** — só lê/escreve as coleções de um projeto quem tem `projects[proj] == true` (admin sempre). Um cliente de um projeto **não** enxerga outro.
+3. **Proteção do próprio doc `users`** — usuário comum **não** pode alterar campos sensíveis do próprio doc (`role`, `permissions`, `projects`, `bloqueado`…); só campos neutros (hoje `cpf`). Isso impede auto-promoção a admin / auto-desbloqueio via console. Criar/apagar/rebaixar usuário = **só admin**. Gestão de clientes da ronda (`rondaCallinkCliente/Locais`, `rondaLinkcallCliente/Locais`) exige `gerenciarClientes` e limita os campos tocados.
+4. **Permissões granulares no banco** — o que dá para distinguir com segurança é imposto: `adicionar/criar` (create), `apagarPermanente` (delete nas `lixeira-*`) e **cliente-externo da ronda = somente leitura**. Globais (`config`, `projetos-lista`, `categorias-usuarios`): leitura p/ membros, escrita só admin.
+
+**Limitação conhecida (fica na UI):** dentro de um projeto que o usuário **já acessa**, `editar` / `reordenar` / `moverLixeira` são o mesmo `update` de documento (às vezes em arrays), então o banco não separa a intenção sem quebrar fluxos — essas sub-ações continuam controladas visualmente. **Todo projeto novo deve adicionar seu próprio `match` block em `firebase.rules`** (isolamento + create/permanente); o catch-all final libera apenas admin, então coleção nova não mapeada fica inacessível a usuários comuns.
 
 **Não recriar doc de usuário no cliente**: `index.html` (login) e `requireAuth`/`requireAdmin` (`shared/auth-guard.js`) **nunca** devem auto-criar `users/{uid}` — isso ressuscitaria usuários excluídos. Se o doc não existir ou `bloqueado === true`, fazer `auth.signOut()` e mandar para `index.html?bloqueado=1`. Contas são criadas **apenas** pelo admin (`admin.html` via app secundário).
 
@@ -55,23 +61,24 @@ Todo projeto novo deve seguir este padrão — já aplicado em `suporte-roteador
 - Itens já restaurados só aparecem na lista para quem tem `apagarPermanente`
 - A lixeira de cada projeto fica em uma coleção top-level: `lixeira-{nome-projeto}`
 
-### Firebase Rules (template)
+### Firebase Rules (template p/ projeto novo)
+As regras completas ficam em `firebase.rules` (helpers `isMembroAtivo`, `isAdmin`, `temProjeto`, `pode`, `apenasCampos`). **Todo projeto novo adiciona seu próprio `match` block** — o catch-all final só libera admin, então coleção não mapeada fica bloqueada p/ usuário comum. Padrão:
 ```
-// Membro ativo = autenticado + doc users/{uid} existe + não bloqueado
-function isMembroAtivo() {
-  return request.auth != null
-    && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-    && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('bloqueado', false) != true;
+// Conteúdo do projeto (sob projetos/{proj}/… ou coleção top-level própria):
+match /projetos/nome-projeto/{document=**} {
+  allow read:           if temProjeto('nome-projeto');
+  allow create:         if pode('nome-projeto', 'adicionar', true); // ou 'criar'/'registrarRonda'
+  allow update, delete: if temProjeto('nome-projeto');             // editar/reordenar = UI
 }
-// Usuário sempre lê o próprio doc (p/ o front detectar bloqueio e deslogar)
-match /users/{uid} {
-  allow read: if request.auth != null && request.auth.uid == uid;
-}
-// Regra global: só membros ativos leem/escrevem
-match /{document=**} {
-  allow read, write: if isMembroAtivo();
+// Lixeira top-level do projeto:
+match /lixeira-nome-projeto/{id} {
+  allow read:   if temProjeto('nome-projeto');
+  allow create: if pode('nome-projeto', 'moverLixeira', true);
+  allow update: if pode('nome-projeto', 'restaurar', true);
+  allow delete: if pode('nome-projeto', 'apagarPermanente', false); // permanente = teeth no banco
 }
 ```
+`pode(proj, cap, default)` espelha `resolverPermissoes` (admin → sempre `true`). Use `default` = o mesmo default do `PERMISSOES_CATALOGO`. Para projetos com cliente somente-leitura (ronda), condicione escritas a `!isClienteXxx()`.
 
 ### Rastreamento de criador (OBRIGATÓRIO em todo item novo)
 Todo documento ou item de array criado deve incluir:

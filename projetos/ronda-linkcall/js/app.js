@@ -320,6 +320,11 @@ function renderRondas(root) {
         ${podeRegistrar ? `<button class="btn btn-primary" onclick="abrirFormRonda()"><i class="fas fa-plus"></i> Registrar ronda</button>` : ''}
       </div>
     </div>
+    <div class="ronda-selbar" id="rondaSelbar" style="display:none">
+      <label class="checkline"><input type="checkbox" id="rondaSelAll" onchange="toggleTodasRondas(this.checked)"> Selecionar todas</label>
+      <span class="ronda-sel-count" id="rondaSelCount">Nenhuma ronda selecionada</span>
+      <button class="btn btn-primary btn-sm" id="btnGerarPdf" disabled onclick="gerarRelatorioSelecionadas()"><i class="fas fa-file-pdf"></i> Gerar relatório PDF</button>
+    </div>
     <div class="list" id="listaRondas"></div>`;
   renderListaRondas();
 }
@@ -328,7 +333,12 @@ function renderListaRondas() {
   const filtro = (document.getElementById('filtroLocalRonda') || {}).value || '';
   const lista = _rondas.filter(r => !filtro || r.localId === filtro);
   const box = document.getElementById('listaRondas');
-  if (!lista.length) { box.innerHTML = `<div class="empty"><i class="fas fa-clipboard"></i>Nenhuma ronda registrada.</div>`; return; }
+  const selbar = document.getElementById('rondaSelbar');
+  if (!lista.length) {
+    if (selbar) selbar.style.display = 'none';
+    box.innerHTML = `<div class="empty"><i class="fas fa-clipboard"></i>Nenhuma ronda registrada.</div>`;
+    return;
+  }
 
   const podeEditar = window._can.editar && !window._isClienteExterno;
   const podeLixeira = window._can.moverLixeira && !window._isClienteExterno;
@@ -344,6 +354,7 @@ function renderListaRondas() {
     ].filter(Boolean).join(' &nbsp; ');
     return `
       <div class="list-row">
+        <label class="ronda-check-wrap"><input type="checkbox" class="ronda-check" value="${r.id}" onchange="atualizarSelecaoRondas()"></label>
         <div class="lr-main">
           <div class="lr-title">${escapeHTML(r.localNome || '—')} · ${formatarData(r.dataRonda)}</div>
           <div class="lr-sub">${resumo}</div>
@@ -355,6 +366,204 @@ function renderListaRondas() {
         </div>
       </div>`;
   }).join('');
+
+  if (selbar) selbar.style.display = 'flex';
+  const selAll = document.getElementById('rondaSelAll');
+  if (selAll) { selAll.checked = false; selAll.indeterminate = false; }
+  atualizarSelecaoRondas();
+}
+
+/* ── Seleção + relatório PDF ───────────────────────── */
+function atualizarSelecaoRondas() {
+  const checks = Array.from(document.querySelectorAll('.ronda-check'));
+  const sel = checks.filter(c => c.checked);
+  const count = document.getElementById('rondaSelCount');
+  const btn = document.getElementById('btnGerarPdf');
+  const selAll = document.getElementById('rondaSelAll');
+  if (count) count.textContent = sel.length ? `${sel.length} ronda(s) selecionada(s)` : 'Nenhuma ronda selecionada';
+  if (btn) btn.disabled = sel.length === 0;
+  if (selAll) {
+    selAll.checked = sel.length > 0 && sel.length === checks.length;
+    selAll.indeterminate = sel.length > 0 && sel.length < checks.length;
+  }
+}
+
+function toggleTodasRondas(marcar) {
+  document.querySelectorAll('.ronda-check').forEach(c => { c.checked = marcar; });
+  atualizarSelecaoRondas();
+}
+
+async function gerarRelatorioSelecionadas() {
+  const ids = Array.from(document.querySelectorAll('.ronda-check:checked')).map(c => c.value);
+  if (!ids.length) return mostrarNotificacao('Selecione ao menos uma ronda.', 'erro');
+  await gerarRelatorioRondas(ids);
+}
+
+async function gerarRelatorioRondas(ids) {
+  const btn = document.getElementById('btnGerarPdf');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando…'; }
+  try {
+    const rondas = ids.map(id => _rondas.find(r => r.id === id)).filter(Boolean)
+      .sort((a, b) => tsMs(a.dataRonda) - tsMs(b.dataRonda));
+    // busca as fotos de cada ronda (subcoleção)
+    const fotosPorRonda = {};
+    await Promise.all(rondas.map(async r => {
+      try { const snap = await SUB_FOTOS(r.id).get(); fotosPorRonda[r.id] = snap.docs.map(d => d.data()); }
+      catch (e) { fotosPorRonda[r.id] = []; }
+    }));
+    const win = window.open('', '_blank');
+    if (!win) { mostrarNotificacao('Permita pop-ups para gerar o relatório.', 'erro'); return; }
+    win.document.open();
+    win.document.write(montarHTMLRelatorio(rondas, fotosPorRonda));
+    win.document.close();
+  } catch (e) {
+    mostrarNotificacao('Erro ao gerar relatório: ' + e.message, 'erro');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-file-pdf"></i> Gerar relatório PDF'; }
+  }
+}
+
+function montarHTMLRelatorio(rondas, fotosPorRonda) {
+  const projNome = ((document.querySelector('.sidebar-brand h1') || {}).textContent || 'Rondas').trim();
+  const geradoEm = new Date().toLocaleString('pt-BR');
+  const esc = escapeHTML;
+
+  const datas = rondas.map(r => tsMs(r.dataRonda)).filter(Boolean).sort((a, b) => a - b);
+  const periodo = datas.length ? `${formatarData(datas[0])} — ${formatarData(datas[datas.length - 1])}` : '—';
+  const totalProblema = rondas.reduce((a, r) => a + (r.catracas || []).filter(c => c.estado === 'problema').length, 0);
+  const totalPecas = rondas.reduce((a, r) => a + (r.pecasTrocadas || []).reduce((s, p) => s + (Number(p.quantidade) || 1), 0), 0);
+
+  const pill = (txt, cls) => `<span class="pill ${cls}">${esc(txt)}</span>`;
+  const thumb = f => `<figure class="ph"><img src="${f.base64}" alt="foto">${(f.secao || f.legenda) ? `<figcaption>${esc((f.secao || '') + (f.legenda ? ' · ' + f.legenda : ''))}</figcaption>` : ''}</figure>`;
+  const pecasTabela = (pecas) => `
+    <table class="pecas">
+      <thead><tr><th>Peça</th><th class="c">Qtd</th><th>Observação</th></tr></thead>
+      <tbody>${pecas.map(p => `<tr><td>${esc(p.produtoNome || '—')}</td><td class="c">${esc(String(p.quantidade || 1))}</td><td>${esc(p.obs || '')}</td></tr>`).join('')}</tbody>
+    </table>`;
+
+  const rondaSec = (r, i) => {
+    const fotos = fotosPorRonda[r.id] || [];
+    const fotosDe = cid => fotos.filter(f => (f.catracaId || null) === cid);
+    const fotosGerais = fotos.filter(f => !f.catracaId);
+    const cats = (r.catracas || []);
+    const catProblema = cats.filter(c => c.estado === 'problema').length;
+    const catracasHTML = cats.length ? cats.map(c => {
+      const pecas = Array.isArray(c.pecas) ? c.pecas : [];
+      const cf = fotosDe(c.catracaId);
+      return `
+        <div class="cat">
+          <div class="cat-h">
+            <span class="cat-n">${esc(c.nome)}</span>
+            ${c.estado === 'problema' ? pill('Problema', 'bad') : pill('OK', 'ok')}
+          </div>
+          ${c.obs ? `<div class="obs">${esc(c.obs)}</div>` : ''}
+          ${pecas.length ? `<div class="sub"><div class="sub-t">Peças trocadas</div>${pecasTabela(pecas)}</div>` : ''}
+          ${cf.length ? `<div class="sub"><div class="sub-t">Fotos da catraca</div><div class="grid">${cf.map(thumb).join('')}</div></div>` : ''}
+        </div>`;
+    }).join('') : '<div class="muted">Sem catracas registradas.</div>';
+
+    const pecasSemCat = (r.pecasTrocadas || []).filter(p => !p.catracaId);
+
+    return `
+      <section class="ronda ${i > 0 ? 'brk' : ''}">
+        <div class="r-head">
+          <div>
+            <div class="r-local">${esc(r.localNome || '—')}</div>
+            <div class="r-meta">${formatarData(r.dataRonda)} &nbsp;·&nbsp; <i>Técnico:</i> ${esc(r.tecnicoNome || r.tecnicoEmail || '—')}</div>
+          </div>
+          <div class="r-tags">${catProblema ? pill(catProblema + ' catraca(s) c/ problema', 'bad') : pill('Catracas OK', 'ok')}</div>
+        </div>
+
+        <div class="cols">
+          <div class="info"><span class="info-k">Local visto:</span>${r.localVisto && r.localVisto.ok ? pill('OK', 'ok') : pill('Com ressalva', 'warn')}</div>
+          ${r.piso && r.piso.possui ? `<div class="info"><span class="info-k">Piso:</span>${r.piso.ok ? pill('OK', 'ok') : pill('Com ressalva', 'warn')}</div>` : ''}
+        </div>
+        ${(r.localVisto && r.localVisto.obs) ? `<div class="obs">${esc(r.localVisto.obs)}</div>` : ''}
+        ${(r.piso && r.piso.possui && r.piso.obs) ? `<div class="obs"><b>Piso:</b> ${esc(r.piso.obs)}</div>` : ''}
+
+        <h3 class="blk-t">Catracas</h3>
+        ${catracasHTML}
+        ${pecasSemCat.length ? `<h3 class="blk-t">Peças trocadas (sem catraca)</h3>${pecasTabela(pecasSemCat)}` : ''}
+        ${r.demaisInfos ? `<h3 class="blk-t">Demais informações</h3><div class="obs pre">${esc(r.demaisInfos)}</div>` : ''}
+        ${fotosGerais.length ? `<h3 class="blk-t">Fotos gerais</h3><div class="grid">${fotosGerais.map(thumb).join('')}</div>` : ''}
+      </section>`;
+  };
+
+  const css = `
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif; color:#1f2937; font-size:12px; line-height:1.5; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .muted { color:#6b7280; font-size:11px; }
+    .cover { padding:34px 40px 26px; border-bottom:3px solid #3b82f6; }
+    .brand { font-size:22px; font-weight:800; letter-spacing:.5px; color:#0f172a; }
+    .brand span { color:#3b82f6; font-weight:600; margin-left:5px; }
+    .cover h1 { font-size:26px; margin-top:18px; color:#0f172a; }
+    .cover-sub { font-size:14px; color:#3b82f6; font-weight:600; margin-top:2px; }
+    .cover-meta { display:flex; gap:28px; margin-top:22px; flex-wrap:wrap; }
+    .cover-meta > div { display:flex; flex-direction:column; }
+    .cover-meta span { font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; }
+    .cover-meta b { font-size:16px; color:#0f172a; margin-top:3px; font-weight:700; }
+    .cover-foot { margin-top:18px; font-size:10.5px; color:#9ca3af; }
+    .ronda { padding:24px 40px; }
+    .ronda.brk { break-before:page; }
+    .r-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; border-bottom:1px solid #e5e7eb; padding-bottom:12px; margin-bottom:14px; }
+    .r-local { font-size:17px; font-weight:700; color:#0f172a; }
+    .r-meta { font-size:11.5px; color:#6b7280; margin-top:3px; }
+    .r-meta i { font-style:normal; color:#9ca3af; }
+    .blk-t { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#3b82f6; font-weight:700; margin:16px 0 8px; }
+    .cols { display:flex; gap:26px; flex-wrap:wrap; }
+    .info { display:flex; align-items:center; gap:8px; }
+    .info-k { font-size:11.5px; color:#6b7280; }
+    .cat { border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; margin-bottom:10px; break-inside:avoid; }
+    .cat-h { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+    .cat-n { font-weight:700; font-size:13px; color:#111827; }
+    .sub { margin-top:10px; }
+    .sub-t { font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; font-weight:700; margin-bottom:5px; }
+    .obs { font-size:11.5px; color:#374151; margin-top:6px; background:#f9fafb; border-left:3px solid #cbd5e1; padding:6px 10px; border-radius:0 6px 6px 0; }
+    .obs.pre { white-space:pre-wrap; }
+    .pill { display:inline-block; font-size:9.5px; font-weight:700; padding:2px 9px; border-radius:999px; }
+    .pill.ok { background:#dcfce7; color:#166534; }
+    .pill.bad { background:#fee2e2; color:#991b1b; }
+    .pill.warn { background:#fef3c7; color:#92400e; }
+    table.pecas { width:100%; border-collapse:collapse; font-size:11px; margin-top:2px; }
+    table.pecas th { text-align:left; background:#f3f4f6; color:#4b5563; font-weight:700; padding:6px 9px; font-size:9.5px; text-transform:uppercase; letter-spacing:.03em; }
+    table.pecas td { padding:6px 9px; border-bottom:1px solid #eef0f2; }
+    table.pecas .c { text-align:center; width:52px; }
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+    .ph { border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; break-inside:avoid; background:#f9fafb; }
+    .ph img { width:100%; height:118px; object-fit:cover; display:block; }
+    .ph figcaption { font-size:9px; color:#6b7280; padding:4px 6px; text-transform:capitalize; }
+    .pg-foot { text-align:center; font-size:9.5px; color:#9ca3af; padding:16px 40px 26px; border-top:1px solid #e5e7eb; margin-top:12px; }
+    @page { size:A4; margin:14mm 0; }
+    @media print { .ronda,.cat,.ph { break-inside:avoid; } }`;
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>Relatório de Rondas — ${esc(projNome)}</title>
+<style>${css}</style></head>
+<body>
+  <header class="cover">
+    <div class="brand">AUDICOM<span>Telecom</span></div>
+    <h1>Relatório de Rondas</h1>
+    <div class="cover-sub">${esc(projNome)}</div>
+    <div class="cover-meta">
+      <div><span>Rondas</span><b>${rondas.length}</b></div>
+      <div><span>Período</span><b>${esc(periodo)}</b></div>
+      <div><span>Catracas c/ problema</span><b>${totalProblema}</b></div>
+      <div><span>Peças trocadas</span><b>${totalPecas}</b></div>
+    </div>
+    <div class="cover-foot">Gerado em ${esc(geradoEm)}</div>
+  </header>
+  ${rondas.map(rondaSec).join('')}
+  <footer class="pg-foot">AUDICOM Telecom · Relatório de Rondas · ${esc(projNome)}</footer>
+  <script>
+    window.addEventListener('load', function () {
+      var imgs = Array.prototype.slice.call(document.images);
+      Promise.all(imgs.map(function (img) {
+        return img.complete ? Promise.resolve() : new Promise(function (res) { img.onload = img.onerror = res; });
+      })).then(function () { setTimeout(function () { window.print(); }, 250); });
+    });
+  <\/script>
+</body></html>`;
 }
 
 async function verRonda(id) {
@@ -366,17 +575,44 @@ async function verRonda(id) {
     <div class="modal-body" id="detalheRonda"><div class="loading-inline">Carregando fotos…</div></div>
   `, 'modal-lg');
 
+  // carrega fotos da subcoleção e agrupa por catraca
+  let fotos = [];
+  try { const snap = await SUB_FOTOS(id).get(); fotos = snap.docs.map(d => d.data()); }
+  catch (e) { fotos = null; }
+
   const box = document.getElementById('detalheRonda');
   const linha = (label, val) => `<div class="ronda-block"><div class="rb-title">${label}</div>${val}</div>`;
+  const thumb = f => `<div class="foto-thumb"><img class="zoomable" src="${f.base64}" alt="foto">${f.secao ? '<span class="foto-sec-tag">' + escapeHTML(f.secao) + (f.legenda ? ' · ' + escapeHTML(f.legenda) : '') + '</span>' : ''}</div>`;
+  const pecaRow = p => `<div class="list-row"><div class="lr-main"><div class="lr-title">${escapeHTML(p.produtoNome)}</div>${p.obs ? '<div class="lr-sub">' + escapeHTML(p.obs) + '</div>' : ''}</div><span class="badge badge-neutro">${escapeHTML(String(p.quantidade || 1))}x</span></div>`;
+  const fotosOK = Array.isArray(fotos);
+  const fotosDaCatraca = cid => fotosOK ? fotos.filter(f => (f.catracaId || null) === cid) : [];
+  const fotosGerais = fotosOK ? fotos.filter(f => !f.catracaId) : [];
 
   const catracasHtml = (r.catracas || []).length
-    ? (r.catracas || []).map(c => `<div class="catraca-row"><div>${escapeHTML(c.nome)} ${c.obs ? '· <span style="color:var(--muted)">' + escapeHTML(c.obs) + '</span>' : ''}</div>
-        <span class="badge ${c.estado === 'problema' ? 'badge-problema' : 'badge-ok'}">${c.estado === 'problema' ? 'Problema' : 'OK'}</span></div>`).join('')
+    ? (r.catracas || []).map(c => {
+        const pecas = Array.isArray(c.pecas) ? c.pecas : [];
+        const cf = fotosDaCatraca(c.catracaId);
+        return `<div class="catraca-card">
+          <div class="catraca-head">
+            <div class="catraca-nome">${escapeHTML(c.nome)}</div>
+            <span class="badge ${c.estado === 'problema' ? 'badge-problema' : 'badge-ok'}">${c.estado === 'problema' ? 'Problema' : 'OK'}</span>
+          </div>
+          ${c.obs ? '<div class="lr-sub" style="margin-top:6px">' + escapeHTML(c.obs) + '</div>' : ''}
+          ${pecas.length ? '<div class="cat-sub"><div class="cat-sub-label">Peças trocadas</div><div class="list">' + pecas.map(pecaRow).join('') + '</div></div>' : ''}
+          ${cf.length ? '<div class="cat-sub"><div class="cat-sub-label">Fotos</div><div class="foto-grid">' + cf.map(thumb).join('') + '</div></div>' : ''}
+        </div>`;
+      }).join('')
     : '<span style="color:var(--muted)">Sem catracas registradas.</span>';
 
-  const pecasHtml = (r.pecasTrocadas || []).length
-    ? '<div class="list">' + (r.pecasTrocadas || []).map(p => `<div class="list-row"><div class="lr-main"><div class="lr-title">${escapeHTML(p.produtoNome)}</div>${p.obs ? '<div class="lr-sub">' + escapeHTML(p.obs) + '</div>' : ''}</div><span class="badge badge-neutro">${escapeHTML(String(p.quantidade || 1))}x</span></div>`).join('') + '</div>'
-    : '<span style="color:var(--muted)">Nenhuma peça trocada.</span>';
+  // compat: rondas antigas com peças não vinculadas a catraca
+  const pecasSemCatraca = (r.pecasTrocadas || []).filter(p => !p.catracaId);
+  const pecasLegadoHtml = pecasSemCatraca.length
+    ? linha('<i class="fas fa-screwdriver-wrench"></i> Peças trocadas (sem catraca)', '<div class="list">' + pecasSemCatraca.map(pecaRow).join('') + '</div>')
+    : '';
+
+  const geraisHtml = !fotosOK
+    ? '<span style="color:var(--danger)">Erro ao carregar fotos.</span>'
+    : (fotosGerais.length ? '<div class="foto-grid">' + fotosGerais.map(thumb).join('') + '</div>' : '<span style="color:var(--muted)">Sem fotos gerais.</span>');
 
   box.innerHTML = `
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
@@ -386,21 +622,9 @@ async function verRonda(id) {
     ${linha('<i class="fas fa-eye"></i> Local visto', (r.localVisto && r.localVisto.ok ? '<span class="badge badge-ok">OK</span>' : '<span class="badge badge-alerta">Com ressalva</span>') + (r.localVisto && r.localVisto.obs ? '<div class="lr-sub" style="margin-top:8px">' + escapeHTML(r.localVisto.obs) + '</div>' : ''))}
     ${r.piso && r.piso.possui ? linha('<i class="fas fa-layer-group"></i> Piso', (r.piso.ok ? '<span class="badge badge-ok">OK</span>' : '<span class="badge badge-alerta">Com ressalva</span>') + (r.piso.obs ? '<div class="lr-sub" style="margin-top:8px">' + escapeHTML(r.piso.obs) + '</div>' : '')) : ''}
     ${linha('<i class="fas fa-door-closed"></i> Catracas', catracasHtml)}
-    ${linha('<i class="fas fa-screwdriver-wrench"></i> Peças trocadas', pecasHtml)}
+    ${pecasLegadoHtml}
     ${r.demaisInfos ? linha('<i class="fas fa-note-sticky"></i> Demais informações', '<div style="white-space:pre-wrap">' + escapeHTML(r.demaisInfos) + '</div>') : ''}
-    <div class="ronda-block"><div class="rb-title"><i class="fas fa-camera"></i> Fotos</div><div class="foto-grid" id="fotosDetalhe"><div class="loading-inline">Carregando…</div></div></div>`;
-
-  // carrega fotos da subcoleção
-  try {
-    const snap = await SUB_FOTOS(id).get();
-    const fotos = snap.docs.map(d => d.data());
-    const grid = document.getElementById('fotosDetalhe');
-    grid.innerHTML = fotos.length
-      ? fotos.map(f => `<div class="foto-thumb"><img class="zoomable" src="${f.base64}" alt="foto">${f.secao ? '<span class="foto-sec-tag">' + escapeHTML(f.secao) + (f.legenda ? ' · ' + escapeHTML(f.legenda) : '') + '</span>' : ''}</div>`).join('')
-      : '<span style="color:var(--muted)">Sem fotos.</span>';
-  } catch (e) {
-    document.getElementById('fotosDetalhe').innerHTML = '<span style="color:var(--danger)">Erro ao carregar fotos.</span>';
-  }
+    ${linha('<i class="fas fa-camera"></i> Fotos gerais', geraisHtml)}`;
 }
 
 /* ── Formulário de ronda (registrar / editar) ─────── */
@@ -457,13 +681,8 @@ async function abrirFormRonda(id = null) {
 
       <div class="ronda-block">
         <div class="rb-title"><i class="fas fa-door-closed"></i> Catracas</div>
+        <div class="rb-hint">Para cada catraca: estado, peças trocadas e fotos específicas dela.</div>
         <div id="catracasBox"><span style="color:var(--muted)">Selecione um local para carregar as catracas.</span></div>
-      </div>
-
-      <div class="ronda-block">
-        <div class="rb-title"><i class="fas fa-screwdriver-wrench"></i> Peças trocadas</div>
-        <div id="pecasBox"></div>
-        <button class="btn btn-sm" onclick="addPecaLinha()" style="margin-top:8px"><i class="fas fa-plus"></i> Adicionar peça</button>
       </div>
 
       <div class="ronda-block">
@@ -472,10 +691,11 @@ async function abrirFormRonda(id = null) {
       </div>
 
       <div class="ronda-block">
-        <div class="rb-title"><i class="fas fa-camera"></i> Fotos</div>
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <div class="rb-title"><i class="fas fa-camera"></i> Fotos gerais</div>
+        <div class="rb-hint">Fotos do local, piso e visão geral. As fotos de cada catraca ficam dentro dela, acima.</div>
+        <div style="display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap">
           <label class="field-label" style="margin:0">Seção da próxima foto:</label>
-          <select class="input" id="fotoSecao" style="width:auto"><option value="geral">Geral</option><option value="local">Local</option><option value="piso">Piso</option><option value="catraca">Catraca</option><option value="peca">Peça</option></select>
+          <select class="input" id="fotoSecao" style="width:auto"><option value="geral">Geral</option><option value="local">Local</option><option value="piso">Piso</option></select>
         </div>
         <div class="foto-grid" id="fotosBox"></div>
         <input type="file" id="fotoInput" accept="image/*" multiple style="display:none" onchange="adicionarFotos(this.files)">
@@ -487,20 +707,16 @@ async function abrirFormRonda(id = null) {
     </div>
   `, 'modal-lg');
 
-  // peças existentes
-  if (r && (r.pecasTrocadas || []).length) r.pecasTrocadas.forEach(p => addPecaLinha(p));
-  // fotos existentes (edição)
+  // fotos existentes (edição) — carregadas ANTES das catracas p/ vincular cada foto à sua catraca
   if (r) {
     try {
       const snap = await SUB_FOTOS(id).get();
-      _fotosRonda = snap.docs.map(d => ({ id: d.id, base64: d.data().base64, secao: d.data().secao || 'geral', legenda: d.data().legenda || '', _nova: false, _removida: false }));
-      renderFotosBox();
+      _fotosRonda = snap.docs.map(d => ({ id: d.id, base64: d.data().base64, secao: d.data().secao || 'geral', legenda: d.data().legenda || '', catracaId: d.data().catracaId || null, catracaNome: d.data().catracaNome || '', _nova: false, _removida: false }));
     } catch (e) { /* silencioso */ }
-  } else {
-    renderFotosBox();
   }
-  // catracas do local (edição já tem local)
-  if (r && r.localId) carregarCatracasForm();
+  renderFotosGerais();
+  // catracas do local — peças e fotos ficam DENTRO de cada catraca (carregadas lá)
+  if (r && r.localId) await carregarCatracasForm();
 }
 
 async function carregarTecnicos() {
@@ -531,17 +747,34 @@ async function carregarCatracasForm() {
     box.innerHTML = _catracasForm.map(c => {
       const est = _estadosCatraca[c.id];
       const obsSalvo = r ? ((r.catracas || []).find(x => x.catracaId === c.id) || {}).obs || '' : '';
-      return `<div class="catraca-row">
-        <div>
-          <div style="font-weight:600">${escapeHTML(c.nome)}</div>
-          <input class="input" style="margin-top:6px;font-size:13px;padding:6px 10px" id="catObs_${c.id}" placeholder="Observação (opcional)" value="${escaparAttr(obsSalvo)}">
+      return `<div class="catraca-card" id="catCard_${c.id}">
+        <div class="catraca-head">
+          <div class="catraca-nome">${escapeHTML(c.nome)}</div>
+          <div class="estado-toggle" id="toggle_${c.id}">
+            <button type="button" class="${est === 'ok' ? 'on-ok' : ''}" onclick="setEstadoCatraca('${c.id}','ok')">OK</button>
+            <button type="button" class="${est === 'problema' ? 'on-problema' : ''}" onclick="setEstadoCatraca('${c.id}','problema')">Problema</button>
+          </div>
         </div>
-        <div class="estado-toggle" id="toggle_${c.id}">
-          <button type="button" class="${est === 'ok' ? 'on-ok' : ''}" onclick="setEstadoCatraca('${c.id}','ok')">OK</button>
-          <button type="button" class="${est === 'problema' ? 'on-problema' : ''}" onclick="setEstadoCatraca('${c.id}','problema')">Problema</button>
+        <input class="input" style="margin-top:10px;font-size:13px;padding:8px 10px" id="catObs_${c.id}" placeholder="Observação (opcional)" value="${escaparAttr(obsSalvo)}">
+        <div class="cat-sub">
+          <div class="cat-sub-label"><i class="fas fa-screwdriver-wrench"></i> Peças trocadas nesta catraca</div>
+          <div id="catPecas_${c.id}"></div>
+          <button class="btn btn-sm" type="button" onclick="addPecaLinhaCatraca('${c.id}')" style="margin-top:6px"><i class="fas fa-plus"></i> Adicionar peça</button>
+        </div>
+        <div class="cat-sub">
+          <div class="cat-sub-label"><i class="fas fa-camera"></i> Fotos desta catraca</div>
+          <div class="foto-grid" id="catFotos_${c.id}"></div>
+          <input type="file" id="catFotoInput_${c.id}" accept="image/*" multiple style="display:none" onchange="adicionarFotosCatraca('${c.id}', this.files)">
         </div>
       </div>`;
     }).join('');
+    // preenche peças salvas e renderiza fotos de cada catraca
+    _catracasForm.forEach(c => {
+      const salvo = r ? (r.catracas || []).find(x => x.catracaId === c.id) : null;
+      const pecasSalvas = salvo && Array.isArray(salvo.pecas) ? salvo.pecas : [];
+      pecasSalvas.forEach(p => addPecaLinhaCatraca(c.id, p));
+      renderFotosCatraca(c.id);
+    });
   } catch (e) {
     box.innerHTML = '<span style="color:var(--danger)">Erro ao carregar catracas.</span>';
   }
@@ -556,8 +789,9 @@ function setEstadoCatraca(id, estado) {
   bPb.className = estado === 'problema' ? 'on-problema' : '';
 }
 
-function addPecaLinha(dados = null) {
-  const box = document.getElementById('pecasBox');
+function addPecaLinhaCatraca(catracaId, dados = null) {
+  const box = document.getElementById('catPecas_' + catracaId);
+  if (!box) return;
   const idLinha = 'peca_' + Math.random().toString(36).slice(2, 8);
   const opts = _produtos.map(p => `<option value="${p.id}" ${dados && dados.produtoId === p.id ? 'selected' : ''}>${escapeHTML(p.nome)}</option>`).join('');
   const div = document.createElement('div');
@@ -566,12 +800,9 @@ function addPecaLinha(dados = null) {
   div.innerHTML = `
     <select class="input peca-produto">${_produtos.length ? '<option value="">Selecione a peça…</option>' + opts : '<option value="">Nenhum produto cadastrado</option>'}</select>
     <input type="number" min="1" class="input peca-qtd" value="${dados ? (dados.quantidade || 1) : 1}" placeholder="Qtd">
-    <button class="btn btn-sm btn-danger" onclick="document.getElementById('${idLinha}').remove()"><i class="fas fa-times"></i></button>`;
+    <button class="btn btn-sm btn-danger" type="button" onclick="document.getElementById('${idLinha}').remove()"><i class="fas fa-times"></i></button>`;
   box.appendChild(div);
-  if (dados && dados.obs) {
-    // guarda obs num data-attr da linha para persistência simples
-    div.dataset.obs = dados.obs;
-  }
+  if (dados && dados.obs) div.dataset.obs = dados.obs; // preserva obs (persistência simples)
 }
 
 function adicionarFotos(files) {
@@ -580,36 +811,61 @@ function adicionarFotos(files) {
   const btn = document.getElementById('btnSalvarRonda');
   if (btn) btn.disabled = true;
   Promise.all(arr.map(f => comprimirImagem(f, 1024, 0.65)
-    .then(base64 => _fotosRonda.push({ base64, secao, legenda: '', _nova: true, _removida: false }))
+    .then(base64 => _fotosRonda.push({ base64, secao, legenda: '', catracaId: null, catracaNome: '', _nova: true, _removida: false }))
     .catch(() => mostrarNotificacao('Falha ao processar uma imagem', 'erro'))
-  )).then(() => { if (btn) btn.disabled = false; renderFotosBox(); });
+  )).then(() => { if (btn) btn.disabled = false; renderFotosGerais(); });
   document.getElementById('fotoInput').value = '';
 }
 
-function renderFotosBox() {
-  const box = document.getElementById('fotosBox');
-  if (!box) return;
-  const visiveis = _fotosRonda.filter(f => !f._removida);
-  box.innerHTML =
-    visiveis.map(f => {
+function adicionarFotosCatraca(catracaId, files) {
+  const cat = _catracasForm.find(c => c.id === catracaId);
+  const arr = Array.from(files);
+  const btn = document.getElementById('btnSalvarRonda');
+  if (btn) btn.disabled = true;
+  Promise.all(arr.map(f => comprimirImagem(f, 1024, 0.65)
+    .then(base64 => _fotosRonda.push({ base64, secao: 'catraca', legenda: '', catracaId, catracaNome: cat ? cat.nome : '', _nova: true, _removida: false }))
+    .catch(() => mostrarNotificacao('Falha ao processar uma imagem', 'erro'))
+  )).then(() => { if (btn) btn.disabled = false; renderFotosCatraca(catracaId); });
+  const input = document.getElementById('catFotoInput_' + catracaId);
+  if (input) input.value = '';
+}
+
+// monta os thumbs (com botão remover) + tile de upload de um conjunto de fotos
+function _fotoThumbsHTML(fotos, uploadOnclick) {
+  return fotos.map(f => {
       const idx = _fotosRonda.indexOf(f);
       return `<div class="foto-thumb">
         <img class="zoomable" src="${f.base64}" alt="foto">
-        <button class="foto-del" onclick="removerFotoRonda(${idx})"><i class="fas fa-times"></i></button>
+        <button class="foto-del" type="button" onclick="removerFotoRonda(${idx})"><i class="fas fa-times"></i></button>
         <span class="foto-sec-tag">${escapeHTML(f.secao || 'geral')}</span>
       </div>`;
     }).join('') +
-    `<div class="foto-upload" onclick="document.getElementById('fotoInput').click()">
+    `<div class="foto-upload" onclick="${uploadOnclick}">
        <i class="fas fa-camera"></i><span>Adicionar foto</span>
      </div>`;
+}
+
+function renderFotosGerais() {
+  const box = document.getElementById('fotosBox');
+  if (!box) return;
+  const visiveis = _fotosRonda.filter(f => !f._removida && !f.catracaId);
+  box.innerHTML = _fotoThumbsHTML(visiveis, "document.getElementById('fotoInput').click()");
+}
+
+function renderFotosCatraca(catracaId) {
+  const box = document.getElementById('catFotos_' + catracaId);
+  if (!box) return;
+  const visiveis = _fotosRonda.filter(f => !f._removida && f.catracaId === catracaId);
+  box.innerHTML = _fotoThumbsHTML(visiveis, `document.getElementById('catFotoInput_${catracaId}').click()`);
 }
 
 function removerFotoRonda(idx) {
   const f = _fotosRonda[idx];
   if (!f) return;
-  if (f._nova) _fotosRonda.splice(idx, 1); // ainda não salva → descarta
-  else f._removida = true;                  // existente → marca p/ deletar ao salvar
-  renderFotosBox();
+  // marca como removida SEM dar splice — assim os índices dos demais thumbs (geral
+  // e de outras catracas) não se deslocam. Novas removidas são ignoradas ao salvar.
+  f._removida = true;
+  if (f.catracaId) renderFotosCatraca(f.catracaId); else renderFotosGerais();
 }
 
 async function salvarRonda() {
@@ -633,21 +889,31 @@ async function salvarRonda() {
     if (t) { tecnicoUid = t.id; tecnicoNome = t.name || t.email; tecnicoEmail = t.email; }
   }
 
-  // catracas
-  const catracas = _catracasForm.map(c => ({
-    catracaId: c.id, nome: c.nome,
-    estado: _estadosCatraca[c.id] || 'ok',
-    obs: (document.getElementById('catObs_' + c.id) || {}).value || ''
-  }));
-
-  // peças
-  const pecas = [];
-  document.querySelectorAll('#pecasBox .peca-linha').forEach(div => {
-    const pid = div.querySelector('.peca-produto').value;
-    if (!pid) return;
-    const prod = _produtos.find(p => p.id === pid);
-    pecas.push({ produtoId: pid, produtoNome: prod ? prod.nome : '', quantidade: Number(div.querySelector('.peca-qtd').value) || 1, obs: div.dataset.obs || '' });
+  // catracas — cada uma com estado, obs e suas próprias peças trocadas
+  const catracas = _catracasForm.map(c => {
+    const pecasCat = [];
+    document.querySelectorAll('#catPecas_' + c.id + ' .peca-linha').forEach(div => {
+      const pid = div.querySelector('.peca-produto').value;
+      if (!pid) return;
+      const prod = _produtos.find(p => p.id === pid);
+      pecasCat.push({ produtoId: pid, produtoNome: prod ? prod.nome : '', quantidade: Number(div.querySelector('.peca-qtd').value) || 1, obs: div.dataset.obs || '' });
+    });
+    return {
+      catracaId: c.id, nome: c.nome,
+      estado: _estadosCatraca[c.id] || 'ok',
+      obs: (document.getElementById('catObs_' + c.id) || {}).value || '',
+      pecas: pecasCat
+    };
   });
+
+  // lista achatada (derivada das catracas) — mantém dashboard/relatórios funcionando,
+  // agora cada peça carrega a qual catraca pertence
+  const pecasTrocadas = [];
+  catracas.forEach(c => (c.pecas || []).forEach(p => pecasTrocadas.push({ ...p, catracaId: c.catracaId, catracaNome: c.nome })));
+  // preserva peças de rondas antigas que não estavam vinculadas a catraca (evita perda ao editar)
+  if (rExist && Array.isArray(rExist.pecasTrocadas)) {
+    rExist.pecasTrocadas.filter(p => !p.catracaId).forEach(p => pecasTrocadas.push(p));
+  }
 
   const dados = {
     localId, localNome: local ? local.nome : '',
@@ -659,7 +925,7 @@ async function salvarRonda() {
       ok: document.getElementById('rPisoOk') ? document.getElementById('rPisoOk').checked : false,
       obs: document.getElementById('rPisoObs') ? document.getElementById('rPisoObs').value.trim() : ''
     },
-    catracas, pecasTrocadas: pecas,
+    catracas, pecasTrocadas,
     demaisInfos: document.getElementById('rInfos').value.trim(),
     status: 'concluida',
   };
@@ -679,7 +945,7 @@ async function salvarRonda() {
     const novas = _fotosRonda.filter(f => f._nova && !f._removida);
     const removidas = _fotosRonda.filter(f => f._removida && f.id);
     await Promise.all([
-      ...novas.map(f => SUB_FOTOS(rondaId).add({ base64: f.base64, secao: f.secao || 'geral', legenda: f.legenda || '', criadoEm: new Date().toISOString(), criadoPor: window._userEmail || '' })),
+      ...novas.map(f => SUB_FOTOS(rondaId).add({ base64: f.base64, secao: f.secao || 'geral', legenda: f.legenda || '', catracaId: f.catracaId || null, catracaNome: f.catracaNome || '', criadoEm: new Date().toISOString(), criadoPor: window._userEmail || '' })),
       ...removidas.map(f => SUB_FOTOS(rondaId).doc(f.id).delete()),
     ]);
 

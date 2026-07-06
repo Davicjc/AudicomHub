@@ -3,47 +3,292 @@ rules_version = '2';
 // ================================================================
 // AUDICOM HUB — Regras de Segurança Firestore
 //
-// Modelo: o acesso NÃO é concedido apenas por estar autenticado.
-// Só tem acesso quem é "membro ativo": possui o documento
-// users/{uid} E não está marcado como bloqueado.
+// Modelo de segurança em camadas (enforcement no BANCO, não só na UI):
 //
-// Assim, um usuário "excluído" (doc apagado) ou "bloqueado" perde
-// acesso ao banco IMEDIATAMENTE, mesmo que a conta do Firebase Auth
-// continue existindo (o front-end não consegue apagar a conta Auth
-// de outro usuário — isso exigiria Admin SDK/backend).
+//  1) MEMBRO ATIVO: só acessa quem tem users/{uid} e não está
+//     `bloqueado`. Usuário excluído/bloqueado perde acesso na hora.
+//  2) ISOLAMENTO POR PROJETO: só lê/escreve as coleções de um projeto
+//     quem tem esse projeto liberado em users/{uid}.projects[proj]
+//     (admin sempre). Um cliente de um projeto NÃO enxerga outro.
+//  3) PROTEÇÃO DO PRÓPRIO DOC: um usuário comum NÃO pode alterar
+//     campos sensíveis do próprio users/{uid} (role, permissions,
+//     projects, bloqueado, ...). Impede auto-promoção a admin ou
+//     auto-desbloqueio via console. Só pode mexer em campos neutros
+//     (ex.: cpf). Criar/apagar/rebaixar usuário = só admin.
+//  4) PERMISSÕES GRANULARES no que o banco consegue distinguir com
+//     segurança: `adicionar/criar` (create), `apagar permanente`
+//     (delete na lixeira) e cliente-externo da ronda (somente leitura).
+//  5) GLOBAIS (config, projetos-lista, categorias-usuarios): leitura
+//     p/ membros ativos, escrita só admin.
 //
-// Restrições por role (user/admin/superadmin) continuam sendo
-// aplicadas apenas na UI/HTML.
+// LIMITAÇÃO CONHECIDA (decisão de projeto — enforcement fica na UI):
+//   Dentro de um projeto que o usuário JÁ acessa, `editar` /
+//   `reordenar` / `mover p/ lixeira` são o MESMO `update` de documento
+//   (às vezes em arrays), então o banco não separa a intenção sem
+//   quebrar fluxos. Essas sub-ações continuam controladas visualmente.
+//   O banco garante o que importa contra abuso: quem não tem o projeto
+//   não entra, cliente é read-only, ninguém se auto-promove, e apagar
+//   permanente exige a permissão certa.
 // ================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isAuth() {
-      return request.auth != null;
-    }
+    // ---------- helpers base ----------
+    function isAuth() { return request.auth != null; }
 
-    // Dados do doc do próprio usuário logado.
+    function existeMeuDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
     function meuDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // Membro ativo = autenticado + doc de usuário existente + não bloqueado.
+    // Membro ativo = autenticado + doc existe + não bloqueado.
     function isMembroAtivo() {
-      return isAuth()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && meuDoc().get('bloqueado', false) != true;
+      return isAuth() && existeMeuDoc() && meuDoc().get('bloqueado', false) != true;
     }
 
-    // O usuário SEMPRE pode ler o próprio doc (mesmo bloqueado ou já apagado),
-    // para o front-end detectar o bloqueio/exclusão e encerrar a sessão.
+    function meuRole() { return meuDoc().get('role', 'user'); }
+    function isAdmin() {
+      return isMembroAtivo() && (meuRole() == 'admin' || meuRole() == 'superadmin');
+    }
+
+    // Acesso ao projeto: projects[proj] == true (admin sempre).
+    function temProjeto(proj) {
+      return isAdmin()
+        || (isMembroAtivo() && meuDoc().get('projects', {}).get(proj, false) == true);
+    }
+
+    // Permissão granular efetiva (espelha resolverPermissoes):
+    // admin => sempre true; senão valor salvo; senão o default informado.
+    function permsProjeto(proj) { return meuDoc().get('permissions', {}).get(proj, {}); }
+    function pode(proj, cap, def) {
+      return isAdmin() || (isMembroAtivo() && permsProjeto(proj).get(cap, def) == true);
+    }
+
+    // Cliente externo da ronda = somente leitura no respectivo projeto.
+    function isClienteCallink() {
+      return isMembroAtivo() && meuDoc().get('rondaCallinkCliente', false) == true;
+    }
+    function isClienteLinkcall() {
+      return isMembroAtivo() && meuDoc().get('rondaLinkcallCliente', false) == true;
+    }
+
+    // Update mexe SOMENTE nos campos listados (usado p/ proteger users).
+    function apenasCampos(campos) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
+    }
+
+    // ================================================================
+    // USERS — o ponto mais sensível para um sistema com clientes.
+    // ================================================================
     match /users/{uid} {
-      allow read: if isAuth() && request.auth.uid == uid;
+      // O próprio usuário sempre lê o próprio doc (mesmo bloqueado, p/ a
+      // sessão detectar o bloqueio e deslogar). Demais docs: membro ativo
+      // (o app lista técnicos/clientes e o painel admin lê a lista).
+      allow read: if isAuth() && (request.auth.uid == uid || isMembroAtivo());
+
+      // Contas são criadas/excluídas apenas pelo admin (app secundário).
+      allow create, delete: if isAdmin();
+
+      allow update: if
+        // admin gerencia role, permissions, projects, bloqueado, categoria...
+        isAdmin()
+        // o próprio usuário só altera campos NEUTROS (nunca role/permissions/
+        // projects/bloqueado). Hoje só o CPF é auto-editável.
+        || (isMembroAtivo() && request.auth.uid == uid && apenasCampos(['cpf']))
+        // gestão de acessos de clientes da Ronda Callink (aba do projeto):
+        // quem tem gerenciarClientes só pode tocar nesses 2 campos de outro doc.
+        || (pode('ronda-callink', 'gerenciarClientes', false)
+            && apenasCampos(['rondaCallinkCliente', 'rondaCallinkLocais']))
+        // idem Ronda Linkcall.
+        || (pode('ronda-linkcall', 'gerenciarClientes', false)
+            && apenasCampos(['rondaLinkcallCliente', 'rondaLinkcallLocais']));
     }
 
-    // Regra global: somente membros ativos leem/escrevem qualquer documento.
+    // ================================================================
+    // GLOBAIS — administradas pelo admin.html; leitura p/ membros.
+    // ================================================================
+    match /config/{doc} {
+      allow read:  if isMembroAtivo();
+      allow write: if isAdmin();
+    }
+    match /projetos-lista/{doc} {
+      allow read:  if isMembroAtivo();
+      allow write: if isAdmin();
+    }
+    match /categorias-usuarios/{doc} {
+      allow read:  if isMembroAtivo();
+      allow write: if isAdmin();
+    }
+
+    // ================================================================
+    // PROJETOS sob projetos/{proj}/... (conteúdo + subcoleções)
+    //   create  -> requer a permissão de "adicionar/criar" do projeto
+    //   update  -> membro com o projeto (editar/reordenar/lixeira = UI)
+    //   delete  -> membro com o projeto (remoção normal de item)
+    //   permanente fica nas coleções lixeira-* (abaixo)
+    // ================================================================
+    match /projetos/suporte-roteadores/{document=**} {
+      allow read:          if temProjeto('suporte-roteadores');
+      allow create:        if pode('suporte-roteadores', 'adicionar', true);
+      allow update, delete : if temProjeto('suporte-roteadores');
+    }
+    match /projetos/suporte-operacoes/{document=**} {
+      allow read:          if temProjeto('suporte-operacoes');
+      allow create:        if pode('suporte-operacoes', 'adicionar', true);
+      allow update, delete : if temProjeto('suporte-operacoes');
+    }
+    match /projetos/agregador-links/{document=**} {
+      allow read:          if temProjeto('agregador-links');
+      allow create:        if pode('agregador-links', 'adicionar', true);
+      allow update, delete : if temProjeto('agregador-links');
+    }
+    match /projetos/solicitacao-manutencoes/{document=**} {
+      allow read:          if temProjeto('solicitacao-manutencoes');
+      allow create:        if pode('solicitacao-manutencoes', 'criar', true);
+      // status/painel adm é controlado na UI (painelAdm); membro com o
+      // projeto pode atualizar sua própria solicitação.
+      allow update, delete : if temProjeto('solicitacao-manutencoes');
+    }
+    match /projetos/sistema-chamados/{document=**} {
+      allow read:  if temProjeto('sistema-chamados');
+      allow write: if temProjeto('sistema-chamados');
+    }
+
+    // Lixeiras dos projetos acima (coleções top-level):
+    //   create -> moverLixeira | update -> restaurar | delete -> apagarPermanente
+    match /lixeira-roteadores/{id} {
+      allow read:   if temProjeto('suporte-roteadores');
+      allow create: if pode('suporte-roteadores', 'moverLixeira', true);
+      allow update: if pode('suporte-roteadores', 'restaurar', true);
+      allow delete: if pode('suporte-roteadores', 'apagarPermanente', false);
+    }
+    match /lixeira-operacoes/{id} {
+      allow read:   if temProjeto('suporte-operacoes');
+      allow create: if pode('suporte-operacoes', 'moverLixeira', true);
+      allow update: if pode('suporte-operacoes', 'restaurar', true);
+      allow delete: if pode('suporte-operacoes', 'apagarPermanente', false);
+    }
+    match /lixeira-links/{id} {
+      allow read:   if temProjeto('agregador-links');
+      allow create: if pode('agregador-links', 'moverLixeira', true);
+      allow update: if pode('agregador-links', 'restaurar', true);
+      allow delete: if pode('agregador-links', 'apagarPermanente', false);
+    }
+
+    // ================================================================
+    // RONDA CALLINK (coleções top-level próprias)
+    //   Cliente externo (rondaCallinkCliente) = SOMENTE LEITURA.
+    // ================================================================
+    match /ronda-callink-locais/{lid} {
+      allow read:          if temProjeto('ronda-callink');
+      allow create, update : if !isClienteCallink()
+                              && (pode('ronda-callink', 'gerenciarLocais', false)
+                                  || pode('ronda-callink', 'moverLixeira', true)
+                                  || pode('ronda-callink', 'restaurar', true));
+      allow delete:        if !isClienteCallink()
+                              && (pode('ronda-callink', 'gerenciarLocais', false)
+                                  || pode('ronda-callink', 'apagarPermanente', false));
+    }
+    match /ronda-callink-locais/{lid}/catracas/{cid} {
+      allow read:                 if temProjeto('ronda-callink');
+      allow create, update, delete : if !isClienteCallink()
+                                     && pode('ronda-callink', 'gerenciarLocais', false);
+    }
+    match /ronda-callink-produtos/{pid} {
+      allow read:          if temProjeto('ronda-callink');
+      allow create, update : if !isClienteCallink()
+                              && (pode('ronda-callink', 'gerenciarProdutos', false)
+                                  || pode('ronda-callink', 'moverLixeira', true)
+                                  || pode('ronda-callink', 'restaurar', true));
+      allow delete:        if !isClienteCallink()
+                              && (pode('ronda-callink', 'gerenciarProdutos', false)
+                                  || pode('ronda-callink', 'apagarPermanente', false));
+    }
+    match /ronda-callink-rondas/{rid} {
+      allow read:   if temProjeto('ronda-callink');
+      allow create: if !isClienteCallink() && pode('ronda-callink', 'registrarRonda', true);
+      // editar ronda + marcar deletado (lixeira) + restaurar são updates.
+      allow update: if !isClienteCallink()
+                      && (pode('ronda-callink', 'registrarRonda', true)
+                          || pode('ronda-callink', 'editar', false)
+                          || pode('ronda-callink', 'moverLixeira', true)
+                          || pode('ronda-callink', 'restaurar', true));
+      allow delete: if !isClienteCallink() && pode('ronda-callink', 'apagarPermanente', false);
+    }
+    match /ronda-callink-rondas/{rid}/fotos/{fid} {
+      allow read:                 if temProjeto('ronda-callink');
+      // fotos são criadas/removidas ao registrar/editar a ronda.
+      allow create, update, delete : if !isClienteCallink()
+                                     && (pode('ronda-callink', 'registrarRonda', true)
+                                         || pode('ronda-callink', 'editar', false));
+    }
+    match /lixeira-ronda-callink/{id} {
+      allow read:   if temProjeto('ronda-callink');
+      allow create: if !isClienteCallink() && pode('ronda-callink', 'moverLixeira', true);
+      allow update: if !isClienteCallink() && pode('ronda-callink', 'restaurar', true);
+      allow delete: if !isClienteCallink() && pode('ronda-callink', 'apagarPermanente', false);
+    }
+
+    // ================================================================
+    // RONDA LINKCALL (clone independente — prefixo ronda-linkcall)
+    // ================================================================
+    match /ronda-linkcall-locais/{lid} {
+      allow read:          if temProjeto('ronda-linkcall');
+      allow create, update : if !isClienteLinkcall()
+                              && (pode('ronda-linkcall', 'gerenciarLocais', false)
+                                  || pode('ronda-linkcall', 'moverLixeira', true)
+                                  || pode('ronda-linkcall', 'restaurar', true));
+      allow delete:        if !isClienteLinkcall()
+                              && (pode('ronda-linkcall', 'gerenciarLocais', false)
+                                  || pode('ronda-linkcall', 'apagarPermanente', false));
+    }
+    match /ronda-linkcall-locais/{lid}/catracas/{cid} {
+      allow read:                 if temProjeto('ronda-linkcall');
+      allow create, update, delete : if !isClienteLinkcall()
+                                     && pode('ronda-linkcall', 'gerenciarLocais', false);
+    }
+    match /ronda-linkcall-produtos/{pid} {
+      allow read:          if temProjeto('ronda-linkcall');
+      allow create, update : if !isClienteLinkcall()
+                              && (pode('ronda-linkcall', 'gerenciarProdutos', false)
+                                  || pode('ronda-linkcall', 'moverLixeira', true)
+                                  || pode('ronda-linkcall', 'restaurar', true));
+      allow delete:        if !isClienteLinkcall()
+                              && (pode('ronda-linkcall', 'gerenciarProdutos', false)
+                                  || pode('ronda-linkcall', 'apagarPermanente', false));
+    }
+    match /ronda-linkcall-rondas/{rid} {
+      allow read:   if temProjeto('ronda-linkcall');
+      allow create: if !isClienteLinkcall() && pode('ronda-linkcall', 'registrarRonda', true);
+      allow update: if !isClienteLinkcall()
+                      && (pode('ronda-linkcall', 'registrarRonda', true)
+                          || pode('ronda-linkcall', 'editar', false)
+                          || pode('ronda-linkcall', 'moverLixeira', true)
+                          || pode('ronda-linkcall', 'restaurar', true));
+      allow delete: if !isClienteLinkcall() && pode('ronda-linkcall', 'apagarPermanente', false);
+    }
+    match /ronda-linkcall-rondas/{rid}/fotos/{fid} {
+      allow read:                 if temProjeto('ronda-linkcall');
+      allow create, update, delete : if !isClienteLinkcall()
+                                     && (pode('ronda-linkcall', 'registrarRonda', true)
+                                         || pode('ronda-linkcall', 'editar', false));
+    }
+    match /lixeira-ronda-linkcall/{id} {
+      allow read:   if temProjeto('ronda-linkcall');
+      allow create: if !isClienteLinkcall() && pode('ronda-linkcall', 'moverLixeira', true);
+      allow update: if !isClienteLinkcall() && pode('ronda-linkcall', 'restaurar', true);
+      allow delete: if !isClienteLinkcall() && pode('ronda-linkcall', 'apagarPermanente', false);
+    }
+
+    // ================================================================
+    // CATCH-ALL: qualquer coleção não mapeada acima fica acessível
+    // apenas para admin (rede de segurança — não abre nada a clientes).
+    // ================================================================
     match /{document=**} {
-      allow read, write: if isMembroAtivo();
+      allow read, write: if isAdmin();
     }
   }
 }
