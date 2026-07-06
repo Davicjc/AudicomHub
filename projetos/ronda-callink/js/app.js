@@ -137,7 +137,9 @@ async function iniciarApp() {
   if (can.gerenciarProdutos) show('navProdutos');
   if (can.gerenciarClientes) show('navClientes');
   if (can.gerenciarLocais || can.gerenciarProdutos || can.gerenciarClientes) show('labelCadastros');
-  if (can.moverLixeira || can.restaurar || can.apagarPermanente) { show('navLixeira'); show('labelFerramentas'); }
+  if (can.visualizarLogs) show('navLogs');
+  if (can.moverLixeira || can.restaurar || can.apagarPermanente) show('navLixeira');
+  if (can.visualizarLogs || can.moverLixeira || can.restaurar || can.apagarPermanente) show('labelFerramentas');
 
   // zoom de fotos por delegação (evita handlers inline gigantes)
   document.addEventListener('click', e => {
