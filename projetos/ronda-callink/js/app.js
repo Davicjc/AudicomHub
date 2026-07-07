@@ -1458,7 +1458,8 @@ async function renderLogs(root) {
         <button class="btn" onclick="renderListaLogs()"><i class="fas fa-rotate"></i> Atualizar</button>
       </div>
     </div>
-    <div id="listaLogs"><div class="loading-inline">Carregando logs…</div></div>`;
+    <div id="listaLogs"><div class="loading-inline">Carregando logs…</div></div>
+    <footer class="logs-footer">by <a href="https://www.paulogfribeiro.lat/" target="_blank" rel="noopener noreferrer">Paulo Gabriel</a></footer>`;
   renderListaLogs();
 }
 
