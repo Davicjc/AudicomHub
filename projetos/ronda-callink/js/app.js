@@ -43,6 +43,11 @@ let _rondaEdit = null;
 let _fotosRonda = [];          // { id?, base64, secao, legenda, _nova, _removida }
 let _estadosCatraca = {};      // { catracaId: 'ok' | 'problema' }
 let _catracasForm = [];        // catracas carregadas do local selecionado
+let _rondaEraRascunho = false;
+let _autosaveRondaTimer = null;
+let _autosaveRondaAtivo = false;
+let _autosaveRondaSalvando = false;
+let _autosaveRondaPendente = false;
 
 /* ================================================================
    UTILITÁRIOS
@@ -90,13 +95,49 @@ function dataInputLocal(d) {
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
+function dataHoraInputLocal(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
 function hojeInput() {
   return dataInputLocal(new Date());
+}
+function timestampDataHoraInput(valor) {
+  if (!valor) return null;
+  const d = new Date(valor);
+  return Number.isNaN(d.getTime()) ? null : firebase.firestore.Timestamp.fromDate(d);
+}
+function formatarHora(v) {
+  const ms = tsMs(v); if (!ms) return '—';
+  return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 function mesmoMes(ms) {
   if (!ms) return false;
   const d = new Date(ms), n = new Date();
   return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
+}
+
+function rondaConcluida(r) { return !r.status || r.status === 'concluida'; }
+function rondaVisivelParaUsuario(r) {
+  if (rondaConcluida(r)) return true;
+  if (window._isClienteExterno) return false;
+  if (window._isAdmin || window._isSuperAdmin) return true;
+  return r.tecnicoUid === window._userUid || r.criadoPorUid === window._userUid;
+}
+function podeEditarRonda(r) {
+  if (window._isClienteExterno) return false;
+  if (window._can.editar) return true;
+  return r.status === 'rascunho' && (r.tecnicoUid === window._userUid || r.criadoPorUid === window._userUid);
+}
+function rondasConcluidas() { return _rondas.filter(rondaConcluida); }
+function ordenarRondas(a, b) {
+  const dataB = tsMs(b.dataRonda) || tsMs(b.horaInicio) || tsMs(b.criadoEmLocal);
+  const dataA = tsMs(a.dataRonda) || tsMs(a.horaInicio) || tsMs(a.criadoEmLocal);
+  return dataB - dataA;
 }
 
 function perfilUsuarioAtual() {
@@ -269,13 +310,38 @@ async function carregarBase() {
 }
 
 async function carregarRondas() {
-  const rs = await COL_RONDAS().get();
-  _rondas = rs.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => !r.deletado);
+  let docs = [];
+  if (window._isAdmin || window._isSuperAdmin) {
+    const rs = await COL_RONDAS().get();
+    docs = rs.docs;
+    normalizarStatusRondasLegado(docs);
+  } else {
+    const snaps = [await COL_RONDAS().where('status', '==', 'concluida').get()];
+    if (!window._isClienteExterno && window._userUid) {
+      snaps.push(await COL_RONDAS().where('tecnicoUid', '==', window._userUid).get());
+      snaps.push(await COL_RONDAS().where('criadoPorUid', '==', window._userUid).get());
+    }
+    const porId = new Map();
+    snaps.forEach(snap => snap.docs.forEach(d => porId.set(d.id, d)));
+    docs = Array.from(porId.values());
+  }
+  _rondas = docs.map(d => ({ id: d.id, ...d.data() })).filter(r => !r.deletado && rondaVisivelParaUsuario(r));
   if (window._isClienteExterno) {
     const ok = new Set(window._locaisCliente);
     _rondas = _rondas.filter(r => ok.has(r.localId));
   }
-  _rondas.sort((a, b) => tsMs(b.dataRonda) - tsMs(a.dataRonda));
+  _rondas.sort(ordenarRondas);
+}
+
+function normalizarStatusRondasLegado(docs) {
+  if (!(window._isAdmin || window._isSuperAdmin)) return;
+  const pendentes = docs.filter(d => !d.data().status).slice(0, 400);
+  if (!pendentes.length) return;
+  Promise.all(pendentes.map(d => d.ref.update({
+    status: 'concluida',
+    statusMigradoEm: firebase.firestore.FieldValue.serverTimestamp(),
+    statusMigradoEmLocal: new Date().toISOString(),
+  }).catch(e => console.warn('Falha ao normalizar status da ronda:', d.id, e.message))));
 }
 
 function irPara(view) {
@@ -310,7 +376,7 @@ function irPara(view) {
    DASHBOARD
    ================================================================ */
 function statusLocal(local) {
-  const rondasLocal = _rondas.filter(r => r.localId === local.id);
+  const rondasLocal = rondasConcluidas().filter(r => r.localId === local.id);
   const intervalo = local.intervaloRondaDias || 15;
   if (!rondasLocal.length)
     return { classe: 's-nunca', badge: 'badge-neutro', texto: 'Nunca realizada', ordem: -1, ultima: null };
@@ -323,7 +389,8 @@ function statusLocal(local) {
 }
 
 function renderDashboard(root) {
-  const rondasMes = _rondas.filter(r => mesmoMes(tsMs(r.dataRonda)));
+  const rondasOk = rondasConcluidas();
+  const rondasMes = rondasOk.filter(r => mesmoMes(tsMs(r.dataRonda)));
   const status = _locais.map(l => ({ local: l, st: statusLocal(l) }));
   const vencidas = status.filter(s => s.st.classe === 's-vencida').length;
   const pecasMes = rondasMes.reduce((acc, r) => acc + (r.pecasTrocadas || []).reduce((a, p) => a + (Number(p.quantidade) || 1), 0), 0);
@@ -377,7 +444,7 @@ function renderDashboard(root) {
 
   // Peças mais trocadas (todas as rondas do escopo)
   const porPeca = {};
-  _rondas.forEach(r => (r.pecasTrocadas || []).forEach(p => {
+  rondasOk.forEach(r => (r.pecasTrocadas || []).forEach(p => {
     const k = p.produtoNome || '—';
     porPeca[k] = (porPeca[k] || 0) + (Number(p.quantidade) || 1);
   }));
@@ -448,13 +515,17 @@ function renderListaRondas() {
     return;
   }
 
-  const podeEditar = window._can.editar && !window._isClienteExterno;
   const podeLixeira = window._can.moverLixeira && !window._isClienteExterno;
 
   box.innerHTML = lista.map(r => {
     const catProblema = (r.catracas || []).filter(c => c.estado === 'problema').length;
     const nPecas = (r.pecasTrocadas || []).length;
+    const concluida = rondaConcluida(r);
+    const periodo = r.horaInicio || r.horaTermino
+      ? `${formatarData(r.dataRonda)} · ${formatarHora(r.horaInicio)} - ${formatarHora(r.horaTermino)}`
+      : formatarData(r.dataRonda);
     const resumo = [
+      !concluida ? `<span class="badge badge-alerta"><i class="fas fa-floppy-disk"></i> Rascunho</span>` : '',
       `<i class="fas fa-user"></i> ${escapeHTML(r.tecnicoNome || r.tecnicoEmail || '—')}`,
       catProblema ? `<span class="badge badge-problema">${catProblema} catraca(s) c/ problema</span>` : '',
       nPecas ? `<span class="badge badge-neutro">${nPecas} peça(s)</span>` : '',
@@ -462,14 +533,14 @@ function renderListaRondas() {
     ].filter(Boolean).join(' &nbsp; ');
     return `
       <div class="list-row">
-        <label class="ronda-check-wrap"><input type="checkbox" class="ronda-check" value="${r.id}" onchange="atualizarSelecaoRondas()"></label>
+        <label class="ronda-check-wrap"><input type="checkbox" class="ronda-check" value="${r.id}" ${concluida ? '' : 'disabled'} onchange="atualizarSelecaoRondas()"></label>
         <div class="lr-main">
-          <div class="lr-title">${escapeHTML(r.localNome || '—')} · ${formatarData(r.dataRonda)}</div>
+          <div class="lr-title">${escapeHTML(r.localNome || '—')} · ${periodo}</div>
           <div class="lr-sub">${resumo}</div>
         </div>
         <div class="lr-actions">
           <button class="btn btn-sm" onclick="verRonda('${r.id}')"><i class="fas fa-eye"></i> Ver</button>
-          ${podeEditar ? `<button class="btn btn-sm" onclick="abrirFormRonda('${r.id}')"><i class="fas fa-pen"></i></button>` : ''}
+          ${podeEditarRonda(r) ? `<button class="btn btn-sm" onclick="abrirFormRonda('${r.id}')"><i class="fas fa-pen"></i> ${concluida ? '' : 'Continuar'}</button>` : ''}
           ${podeLixeira ? `<button class="btn btn-sm btn-danger" onclick="moverRondaLixeira('${r.id}')"><i class="fas fa-trash"></i></button>` : ''}
         </div>
       </div>`;
@@ -483,7 +554,7 @@ function renderListaRondas() {
 
 /* ── Seleção + relatório PDF ───────────────────────── */
 function atualizarSelecaoRondas() {
-  const checks = Array.from(document.querySelectorAll('.ronda-check'));
+  const checks = Array.from(document.querySelectorAll('.ronda-check:not(:disabled)'));
   const sel = checks.filter(c => c.checked);
   const count = document.getElementById('rondaSelCount');
   const btn = document.getElementById('btnGerarPdf');
@@ -497,7 +568,7 @@ function atualizarSelecaoRondas() {
 }
 
 function toggleTodasRondas(marcar) {
-  document.querySelectorAll('.ronda-check').forEach(c => { c.checked = marcar; });
+  document.querySelectorAll('.ronda-check:not(:disabled)').forEach(c => { c.checked = marcar; });
   atualizarSelecaoRondas();
 }
 
@@ -512,7 +583,9 @@ async function gerarRelatorioRondas(ids) {
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando…'; }
   try {
     const rondas = ids.map(id => _rondas.find(r => r.id === id)).filter(Boolean)
+      .filter(rondaConcluida)
       .sort((a, b) => tsMs(a.dataRonda) - tsMs(b.dataRonda));
+    if (!rondas.length) { mostrarNotificacao('Selecione ao menos uma ronda concluída.', 'erro'); return; }
     // busca as fotos de cada ronda (subcoleção)
     const fotosPorRonda = {};
     await Promise.all(rondas.map(async r => {
@@ -578,7 +651,7 @@ function montarHTMLRelatorio(rondas, fotosPorRonda) {
         <div class="r-head">
           <div>
             <div class="r-local">${esc(r.localNome || '—')}</div>
-            <div class="r-meta">${formatarData(r.dataRonda)} &nbsp;·&nbsp; <i>Técnico:</i> ${esc(r.tecnicoNome || r.tecnicoEmail || '—')}</div>
+            <div class="r-meta">${formatarData(r.dataRonda)} &nbsp;·&nbsp; ${formatarHora(r.horaInicio)} - ${formatarHora(r.horaTermino)} &nbsp;·&nbsp; <i>Técnico:</i> ${esc(r.tecnicoNome || r.tecnicoEmail || '—')}</div>
           </div>
           <div class="r-tags">${catProblema ? pill(catProblema + ' catraca(s) c/ problema', 'bad') : pill('Catracas OK', 'ok')}</div>
         </div>
@@ -726,7 +799,10 @@ async function verRonda(id) {
 
   box.innerHTML = `
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      ${rondaConcluida(r) ? '<span class="badge badge-ok"><i class="fas fa-check"></i> Concluída</span>' : '<span class="badge badge-alerta"><i class="fas fa-floppy-disk"></i> Rascunho</span>'}
       <span class="badge badge-neutro"><i class="fas fa-calendar"></i> ${formatarData(r.dataRonda)}</span>
+      <span class="badge badge-neutro"><i class="fas fa-clock"></i> Início: ${formatarDataHora(r.horaInicio)}</span>
+      <span class="badge badge-neutro"><i class="fas fa-flag-checkered"></i> Término: ${formatarDataHora(r.horaTermino)}</span>
       <span class="badge badge-neutro"><i class="fas fa-user"></i> ${escapeHTML(r.tecnicoNome || r.tecnicoEmail || '—')}</span>
     </div>
     ${linha('<i class="fas fa-eye"></i> Local visto', (r.localVisto && r.localVisto.ok ? '<span class="badge badge-ok">OK</span>' : '<span class="badge badge-alerta">Com ressalva</span>') + (r.localVisto && r.localVisto.obs ? '<div class="lr-sub" style="margin-top:8px">' + escapeHTML(r.localVisto.obs) + '</div>' : ''))}
@@ -743,8 +819,15 @@ async function abrirFormRonda(id = null) {
   _fotosRonda = [];
   _estadosCatraca = {};
   _catracasForm = [];
+  _rondaEraRascunho = false;
+  _autosaveRondaAtivo = false;
+  _autosaveRondaPendente = false;
+  clearTimeout(_autosaveRondaTimer);
 
   const r = id ? _rondas.find(x => x.id === id) : null;
+  _rondaEraRascunho = !!(r && r.status === 'rascunho');
+  const inicioValor = r && r.horaInicio ? dataHoraInputLocal(new Date(tsMs(r.horaInicio))) : dataHoraInputLocal(new Date());
+  const terminoValor = r && r.horaTermino ? dataHoraInputLocal(new Date(tsMs(r.horaTermino))) : '';
 
   // técnicos (admin pode escolher outro)
   let tecOptions = '';
@@ -759,7 +842,7 @@ async function abrirFormRonda(id = null) {
   abrirModal(`
     <div class="modal-header"><h3><i class="fas fa-clipboard-check"></i> ${r ? 'Editar' : 'Registrar'} ronda</h3>
       <button class="modal-close" onclick="fecharModal()">&times;</button></div>
-    <div class="modal-body">
+    <div class="modal-body" id="formRondaBody">
       <div class="form-row">
         <div class="form-group">
           <label class="field-label">Local *</label>
@@ -770,6 +853,16 @@ async function abrirFormRonda(id = null) {
         <div class="form-group">
           <label class="field-label">Data da ronda *</label>
           <input type="date" class="input" id="rData" value="${r ? new Date(tsMs(r.dataRonda)).toISOString().slice(0,10) : hojeInput()}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="field-label">Hora de início *</label>
+          <input type="datetime-local" class="input" id="rHoraInicio" value="${inicioValor}">
+        </div>
+        <div class="form-group">
+          <label class="field-label">Hora de término</label>
+          <input type="datetime-local" class="input" id="rHoraTermino" value="${terminoValor}">
         </div>
       </div>
       ${window._isAdmin ? `<div class="form-group"><label class="field-label">Técnico responsável</label><select class="input" id="rTecnico">${tecOptions}</select></div>` : ''}
@@ -812,10 +905,16 @@ async function abrirFormRonda(id = null) {
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn" onclick="fecharModal()">Cancelar</button>
+      <span id="rAutosaveStatus" class="autosave-status"><i class="fas fa-floppy-disk"></i> Preparando rascunho…</span>
+      <button class="btn" onclick="fecharModal()">Fechar</button>
       <button class="btn btn-primary" id="btnSalvarRonda" onclick="salvarRonda()"><i class="fas fa-check"></i> ${r ? 'Salvar alterações' : 'Registrar'}</button>
     </div>
   `, 'modal-lg');
+
+  prepararAutosaveRonda();
+  if (!r) await garantirDocumentoRascunhoRonda();
+  else setAutosaveRondaStatus(r.status === 'rascunho' ? 'Rascunho recuperado.' : 'Alterações serão salvas automaticamente.');
+  _autosaveRondaAtivo = true;
 
   // fotos existentes (edição) — carregadas ANTES das catracas p/ vincular cada foto à sua catraca
   if (r) {
@@ -827,6 +926,110 @@ async function abrirFormRonda(id = null) {
   renderFotosGerais();
   // catracas do local — peças e fotos ficam DENTRO de cada catraca (carregadas lá)
   if (r && r.localId) await carregarCatracasForm();
+}
+
+function setAutosaveRondaStatus(txt, erro = false) {
+  const el = document.getElementById('rAutosaveStatus');
+  if (!el) return;
+  el.style.color = erro ? 'var(--danger)' : 'var(--muted)';
+  el.innerHTML = `<i class="fas ${erro ? 'fa-triangle-exclamation' : 'fa-floppy-disk'}"></i> ${escapeHTML(txt)}`;
+}
+
+function prepararAutosaveRonda() {
+  const body = document.getElementById('formRondaBody');
+  if (!body) return;
+  body.addEventListener('input', agendarAutosaveRonda);
+  body.addEventListener('change', agendarAutosaveRonda);
+}
+
+function agendarAutosaveRonda() {
+  if (!_autosaveRondaAtivo) return;
+  clearTimeout(_autosaveRondaTimer);
+  setAutosaveRondaStatus('Alterações pendentes…');
+  _autosaveRondaTimer = setTimeout(executarAutosaveRonda, 1200);
+}
+
+async function garantirDocumentoRascunhoRonda() {
+  if (_rondaEdit) return _rondaEdit;
+  const dados = coletarDadosFormRonda('rascunho');
+  dados.criadoPor = window._userEmail || '';
+  dados.criadoPorUid = window._userUid || '';
+  dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
+  dados.criadoEmLocal = new Date().toISOString();
+  try {
+    const ref = await COL_RONDAS().add(dados);
+    _rondaEdit = ref.id;
+    _rondaEraRascunho = true;
+    setAutosaveRondaStatus('Rascunho iniciado e salvo.');
+    return ref.id;
+  } catch (e) {
+    setAutosaveRondaStatus('Falha ao iniciar rascunho: ' + e.message, true);
+    throw e;
+  }
+}
+
+function tecnicoSelecionadoRonda(rExist) {
+  let tecnicoUid  = rExist ? rExist.tecnicoUid   : window._userUid;
+  let tecnicoNome = rExist ? rExist.tecnicoNome  : window._userNome;
+  let tecnicoEmail= rExist ? rExist.tecnicoEmail : window._userEmail;
+  if (window._isAdmin && document.getElementById('rTecnico')) {
+    const uid = document.getElementById('rTecnico').value;
+    const t = (_tecnicos || []).find(x => x.id === uid);
+    if (t) { tecnicoUid = t.id; tecnicoNome = t.name || t.email; tecnicoEmail = t.email; }
+  }
+  return { tecnicoUid, tecnicoNome, tecnicoEmail };
+}
+
+function coletarCatracasFormRonda() {
+  return _catracasForm.map(c => {
+    const pecasCat = [];
+    document.querySelectorAll('#catPecas_' + c.id + ' .peca-linha').forEach(div => {
+      const pid = div.querySelector('.peca-produto').value;
+      if (!pid) return;
+      const prod = _produtos.find(p => p.id === pid);
+      pecasCat.push({ produtoId: pid, produtoNome: prod ? prod.nome : '', quantidade: Number(div.querySelector('.peca-qtd').value) || 1, obs: div.dataset.obs || '' });
+    });
+    return {
+      catracaId: c.id, nome: c.nome,
+      estado: _estadosCatraca[c.id] || 'ok',
+      obs: (document.getElementById('catObs_' + c.id) || {}).value || '',
+      pecas: pecasCat
+    };
+  });
+}
+
+function coletarDadosFormRonda(status) {
+  const localId = (document.getElementById('rLocal') || {}).value || '';
+  const dataStr = (document.getElementById('rData') || {}).value || '';
+  const local = _locais.find(l => l.id === localId);
+  const rExist = _rondaEdit ? _rondas.find(x => x.id === _rondaEdit) : null;
+  const tecnico = tecnicoSelecionadoRonda(rExist);
+  const catracas = coletarCatracasFormRonda();
+  const pecasTrocadas = [];
+  catracas.forEach(c => (c.pecas || []).forEach(p => pecasTrocadas.push({ ...p, catracaId: c.catracaId, catracaNome: c.nome })));
+  if (rExist && Array.isArray(rExist.pecasTrocadas)) {
+    rExist.pecasTrocadas.filter(p => !p.catracaId).forEach(p => pecasTrocadas.push(p));
+  }
+  return {
+    localId, localNome: local ? local.nome : '',
+    ...tecnico,
+    dataRonda: dataStr ? firebase.firestore.Timestamp.fromDate(new Date(dataStr + 'T12:00:00')) : null,
+    horaInicio: timestampDataHoraInput((document.getElementById('rHoraInicio') || {}).value),
+    horaTermino: timestampDataHoraInput((document.getElementById('rHoraTermino') || {}).value),
+    horaInicioLocal: (document.getElementById('rHoraInicio') || {}).value || '',
+    horaTerminoLocal: (document.getElementById('rHoraTermino') || {}).value || '',
+    localVisto: { ok: !!(document.getElementById('rLocalOk') || {}).checked, obs: ((document.getElementById('rLocalObs') || {}).value || '').trim() },
+    piso: {
+      possui: !!(document.getElementById('rPisoPossui') || {}).checked,
+      ok: document.getElementById('rPisoOk') ? document.getElementById('rPisoOk').checked : false,
+      obs: document.getElementById('rPisoObs') ? document.getElementById('rPisoObs').value.trim() : ''
+    },
+    catracas, pecasTrocadas,
+    demaisInfos: ((document.getElementById('rInfos') || {}).value || '').trim(),
+    status,
+    atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+    atualizadoEmLocal: new Date().toISOString(),
+  };
 }
 
 async function carregarTecnicos() {
@@ -841,7 +1044,7 @@ async function carregarTecnicos() {
 async function carregarCatracasForm() {
   const localId = document.getElementById('rLocal').value;
   const box = document.getElementById('catracasBox');
-  if (!localId) { box.innerHTML = '<span style="color:var(--muted)">Selecione um local para carregar as catracas.</span>'; return; }
+  if (!localId) { box.innerHTML = '<span style="color:var(--muted)">Selecione um local para carregar as catracas.</span>'; agendarAutosaveRonda(); return; }
   box.innerHTML = '<div class="loading-inline">Carregando catracas…</div>';
   try {
     const snap = await SUB_CATRACAS(localId).get();
@@ -853,7 +1056,7 @@ async function carregarCatracasForm() {
       const salvo = r && (r.catracas || []).find(x => x.catracaId === c.id);
       _estadosCatraca[c.id] = salvo ? salvo.estado : 'ok';
     });
-    if (!_catracasForm.length) { box.innerHTML = '<span style="color:var(--muted)">Este local não tem catracas cadastradas.</span>'; return; }
+    if (!_catracasForm.length) { box.innerHTML = '<span style="color:var(--muted)">Este local não tem catracas cadastradas.</span>'; agendarAutosaveRonda(); return; }
     box.innerHTML = _catracasForm.map(c => {
       const est = _estadosCatraca[c.id];
       const obsSalvo = r ? ((r.catracas || []).find(x => x.catracaId === c.id) || {}).obs || '' : '';
@@ -885,6 +1088,7 @@ async function carregarCatracasForm() {
       pecasSalvas.forEach(p => addPecaLinhaCatraca(c.id, p));
       renderFotosCatraca(c.id);
     });
+    agendarAutosaveRonda();
   } catch (e) {
     box.innerHTML = '<span style="color:var(--danger)">Erro ao carregar catracas.</span>';
   }
@@ -897,6 +1101,7 @@ function setEstadoCatraca(id, estado) {
   const [bOk, bPb] = t.querySelectorAll('button');
   bOk.className = estado === 'ok' ? 'on-ok' : '';
   bPb.className = estado === 'problema' ? 'on-problema' : '';
+  agendarAutosaveRonda();
 }
 
 function addPecaLinhaCatraca(catracaId, dados = null) {
@@ -910,9 +1115,10 @@ function addPecaLinhaCatraca(catracaId, dados = null) {
   div.innerHTML = `
     <select class="input peca-produto">${_produtos.length ? '<option value="">Selecione a peça…</option>' + opts : '<option value="">Nenhum produto cadastrado</option>'}</select>
     <input type="number" min="1" class="input peca-qtd" value="${dados ? (dados.quantidade || 1) : 1}" placeholder="Qtd">
-    <button class="btn btn-sm btn-danger" type="button" onclick="document.getElementById('${idLinha}').remove()"><i class="fas fa-times"></i></button>`;
+    <button class="btn btn-sm btn-danger" type="button" onclick="document.getElementById('${idLinha}').remove();agendarAutosaveRonda()"><i class="fas fa-times"></i></button>`;
   box.appendChild(div);
   if (dados && dados.obs) div.dataset.obs = dados.obs; // preserva obs (persistência simples)
+  if (!dados) agendarAutosaveRonda();
 }
 
 function adicionarFotos(files) {
@@ -923,7 +1129,7 @@ function adicionarFotos(files) {
   Promise.all(arr.map(f => comprimirImagem(f, 1024, 0.65)
     .then(base64 => _fotosRonda.push({ base64, secao, legenda: '', catracaId: null, catracaNome: '', _nova: true, _removida: false }))
     .catch(() => mostrarNotificacao('Falha ao processar uma imagem', 'erro'))
-  )).then(() => { if (btn) btn.disabled = false; renderFotosGerais(); });
+  )).then(() => { if (btn) btn.disabled = false; renderFotosGerais(); agendarAutosaveRonda(); });
   document.getElementById('fotoInput').value = '';
 }
 
@@ -935,7 +1141,7 @@ function adicionarFotosCatraca(catracaId, files) {
   Promise.all(arr.map(f => comprimirImagem(f, 1024, 0.65)
     .then(base64 => _fotosRonda.push({ base64, secao: 'catraca', legenda: '', catracaId, catracaNome: cat ? cat.nome : '', _nova: true, _removida: false }))
     .catch(() => mostrarNotificacao('Falha ao processar uma imagem', 'erro'))
-  )).then(() => { if (btn) btn.disabled = false; renderFotosCatraca(catracaId); });
+  )).then(() => { if (btn) btn.disabled = false; renderFotosCatraca(catracaId); agendarAutosaveRonda(); });
   const input = document.getElementById('catFotoInput_' + catracaId);
   if (input) input.value = '';
 }
@@ -976,6 +1182,58 @@ function removerFotoRonda(idx) {
   // e de outras catracas) não se deslocam. Novas removidas são ignoradas ao salvar.
   f._removida = true;
   if (f.catracaId) renderFotosCatraca(f.catracaId); else renderFotosGerais();
+  agendarAutosaveRonda();
+}
+
+async function sincronizarFotosRonda(rondaId) {
+  if (!rondaId) return { novas: 0, removidas: 0 };
+  const novas = _fotosRonda.filter(f => f._nova && !f._removida);
+  const removidas = _fotosRonda.filter(f => f._removida && f.id);
+  let novasSalvas = 0;
+  let removidasSalvas = 0;
+  await Promise.all(novas.map(async f => {
+    const ref = await SUB_FOTOS(rondaId).add({
+      base64: f.base64,
+      secao: f.secao || 'geral',
+      legenda: f.legenda || '',
+      catracaId: f.catracaId || null,
+      catracaNome: f.catracaNome || '',
+      criadoEm: new Date().toISOString(),
+      criadoPor: window._userEmail || ''
+    });
+    f.id = ref.id;
+    f._nova = false;
+    novasSalvas++;
+  }));
+  await Promise.all(removidas.map(async f => {
+    await SUB_FOTOS(rondaId).doc(f.id).delete();
+    removidasSalvas++;
+  }));
+  _fotosRonda = _fotosRonda.filter(f => !(f._removida && (f.id || !f._nova)));
+  const totalFotos = _fotosRonda.filter(f => !f._removida).length;
+  await COL_RONDAS().doc(rondaId).set({ nFotos: totalFotos, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(), atualizadoEmLocal: new Date().toISOString() }, { merge: true });
+  return { novas: novasSalvas, removidas: removidasSalvas };
+}
+
+async function executarAutosaveRonda() {
+  if (!_autosaveRondaAtivo || !document.getElementById('formRondaBody')) return;
+  if (_autosaveRondaSalvando) { _autosaveRondaPendente = true; return; }
+  _autosaveRondaSalvando = true;
+  _autosaveRondaPendente = false;
+  setAutosaveRondaStatus('Salvando automaticamente…');
+  try {
+    const rondaId = await garantirDocumentoRascunhoRonda();
+    const rExist = _rondas.find(x => x.id === rondaId);
+    const statusAtual = _rondaEraRascunho ? 'rascunho' : ((rExist && rExist.status) || 'concluida');
+    await COL_RONDAS().doc(rondaId).set(coletarDadosFormRonda(statusAtual), { merge: true });
+    await sincronizarFotosRonda(rondaId);
+    setAutosaveRondaStatus('Salvo automaticamente às ' + formatarHora(new Date()));
+  } catch (e) {
+    setAutosaveRondaStatus('Falha no autosave: ' + e.message, true);
+  } finally {
+    _autosaveRondaSalvando = false;
+    if (_autosaveRondaPendente) agendarAutosaveRonda();
+  }
 }
 
 async function salvarRonda() {
@@ -987,86 +1245,33 @@ async function salvarRonda() {
   const local = _locais.find(l => l.id === localId);
   const btn = document.getElementById('btnSalvarRonda');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando…';
-
-  // técnico: em edição preserva o original; em nova ronda é o logado; admin pode escolher
+  clearTimeout(_autosaveRondaTimer);
+  if (!document.getElementById('rHoraTermino').value) document.getElementById('rHoraTermino').value = dataHoraInputLocal(new Date());
   const rExist = _rondaEdit ? _rondas.find(x => x.id === _rondaEdit) : null;
-  let tecnicoUid  = rExist ? rExist.tecnicoUid   : window._userUid;
-  let tecnicoNome = rExist ? rExist.tecnicoNome  : window._userNome;
-  let tecnicoEmail= rExist ? rExist.tecnicoEmail : window._userEmail;
-  if (window._isAdmin && document.getElementById('rTecnico')) {
-    const uid = document.getElementById('rTecnico').value;
-    const t = (_tecnicos || []).find(x => x.id === uid);
-    if (t) { tecnicoUid = t.id; tecnicoNome = t.name || t.email; tecnicoEmail = t.email; }
-  }
-
-  // catracas — cada uma com estado, obs e suas próprias peças trocadas
-  const catracas = _catracasForm.map(c => {
-    const pecasCat = [];
-    document.querySelectorAll('#catPecas_' + c.id + ' .peca-linha').forEach(div => {
-      const pid = div.querySelector('.peca-produto').value;
-      if (!pid) return;
-      const prod = _produtos.find(p => p.id === pid);
-      pecasCat.push({ produtoId: pid, produtoNome: prod ? prod.nome : '', quantidade: Number(div.querySelector('.peca-qtd').value) || 1, obs: div.dataset.obs || '' });
-    });
-    return {
-      catracaId: c.id, nome: c.nome,
-      estado: _estadosCatraca[c.id] || 'ok',
-      obs: (document.getElementById('catObs_' + c.id) || {}).value || '',
-      pecas: pecasCat
-    };
-  });
-
-  // lista achatada (derivada das catracas) — mantém dashboard/relatórios funcionando,
-  // agora cada peça carrega a qual catraca pertence
-  const pecasTrocadas = [];
-  catracas.forEach(c => (c.pecas || []).forEach(p => pecasTrocadas.push({ ...p, catracaId: c.catracaId, catracaNome: c.nome })));
-  // preserva peças de rondas antigas que não estavam vinculadas a catraca (evita perda ao editar)
-  if (rExist && Array.isArray(rExist.pecasTrocadas)) {
-    rExist.pecasTrocadas.filter(p => !p.catracaId).forEach(p => pecasTrocadas.push(p));
-  }
-
-  const dados = {
-    localId, localNome: local ? local.nome : '',
-    tecnicoUid, tecnicoNome, tecnicoEmail,
-    dataRonda: firebase.firestore.Timestamp.fromDate(new Date(dataStr + 'T12:00:00')),
-    localVisto: { ok: document.getElementById('rLocalOk').checked, obs: document.getElementById('rLocalObs').value.trim() },
-    piso: {
-      possui: document.getElementById('rPisoPossui').checked,
-      ok: document.getElementById('rPisoOk') ? document.getElementById('rPisoOk').checked : false,
-      obs: document.getElementById('rPisoObs') ? document.getElementById('rPisoObs').value.trim() : ''
-    },
-    catracas, pecasTrocadas,
-    demaisInfos: document.getElementById('rInfos').value.trim(),
-    status: 'concluida',
-  };
+  const eraCriacao = !_rondaEdit || _rondaEraRascunho || (rExist && rExist.status === 'rascunho');
+  const dados = coletarDadosFormRonda('concluida');
+  dados.finalizadaEm = firebase.firestore.FieldValue.serverTimestamp();
+  dados.finalizadaEmLocal = new Date().toISOString();
 
   try {
-    let rondaId = _rondaEdit;
-    if (_rondaEdit) {
-      await COL_RONDAS().doc(_rondaEdit).update(dados);
-    } else {
+    let rondaId = await garantirDocumentoRascunhoRonda();
+    if (!rondaId) {
       dados.criadoPor = window._userEmail || '';
+      dados.criadoPorUid = window._userUid || '';
       dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
       const ref = await COL_RONDAS().add(dados);
       rondaId = ref.id;
+    } else {
+      await COL_RONDAS().doc(rondaId).set(dados, { merge: true });
     }
 
-    // sincroniza fotos
-    const novas = _fotosRonda.filter(f => f._nova && !f._removida);
-    const removidas = _fotosRonda.filter(f => f._removida && f.id);
-    await Promise.all([
-      ...novas.map(f => SUB_FOTOS(rondaId).add({ base64: f.base64, secao: f.secao || 'geral', legenda: f.legenda || '', catracaId: f.catracaId || null, catracaNome: f.catracaNome || '', criadoEm: new Date().toISOString(), criadoPor: window._userEmail || '' })),
-      ...removidas.map(f => SUB_FOTOS(rondaId).doc(f.id).delete()),
-    ]);
-
-    // atualiza contador de fotos
-    const totalFotos = _fotosRonda.filter(f => !f._removida).length;
-    await COL_RONDAS().doc(rondaId).update({ nFotos: totalFotos });
-    registrarLog(_rondaEdit ? 'edicao' : 'criacao', _rondaEdit ? 'Editou ronda' : 'Criou ronda', `${_rondaEdit ? 'Editou' : 'Registrou'} ronda de ${local ? local.nome : 'local'} em ${formatarData(dados.dataRonda)}.`, {
-      itemTipo: 'ronda', itemId: rondaId, localId, fotosAdicionadas: novas.length, fotosRemovidas: removidas.length
+    const fotosSync = await sincronizarFotosRonda(rondaId);
+    registrarLog(eraCriacao ? 'criacao' : 'edicao', eraCriacao ? 'Criou ronda' : 'Editou ronda', `${eraCriacao ? 'Registrou' : 'Editou'} ronda de ${local ? local.nome : 'local'} em ${formatarData(dados.dataRonda)}.`, {
+      itemTipo: 'ronda', itemId: rondaId, localId, fotosAdicionadas: fotosSync.novas, fotosRemovidas: fotosSync.removidas
     });
 
-    mostrarNotificacao(_rondaEdit ? 'Ronda atualizada.' : 'Ronda registrada com sucesso.');
+    _autosaveRondaAtivo = false;
+    mostrarNotificacao(eraCriacao ? 'Ronda registrada com sucesso.' : 'Ronda atualizada.');
     fecharModal();
     await carregarRondas();
     irPara('rondas');
@@ -1098,7 +1303,7 @@ async function moverRondaLixeira(id) {
 /* ── Histórico por local (timeline) ───────────────── */
 async function verHistoricoLocal(localId) {
   const local = _locais.find(l => l.id === localId);
-  const rondasLocal = _rondas.filter(r => r.localId === localId);
+  const rondasLocal = _rondas.filter(r => r.localId === localId && (rondaConcluida(r) || !window._isClienteExterno));
   registrarLog('visualizacao', 'Visualizou histórico do local', `Visualizou o histórico de ${local ? local.nome : 'local'}.`, { itemTipo: 'local', itemId: localId });
   abrirModal(`
     <div class="modal-header"><h3><i class="fas fa-clock-rotate-left"></i> Histórico — ${escapeHTML(local ? local.nome : '')}</h3>
@@ -1109,8 +1314,9 @@ async function verHistoricoLocal(localId) {
         return `<div class="tl-item">
           <div class="card card-hover" onclick="fecharModal();verRonda('${r.id}')" style="cursor:pointer">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-              <div><b>${formatarData(r.dataRonda)}</b> · ${escapeHTML(r.tecnicoNome || '—')}</div>
+              <div><b>${formatarData(r.dataRonda)}</b> · ${formatarHora(r.horaInicio)} - ${formatarHora(r.horaTermino)} · ${escapeHTML(r.tecnicoNome || '—')}</div>
               <div style="display:flex;gap:6px">
+                ${rondaConcluida(r) ? '' : '<span class="badge badge-alerta">Rascunho</span>'}
                 ${catP ? `<span class="badge badge-problema">${catP} problema(s)</span>` : '<span class="badge badge-ok">Sem problemas</span>'}
                 ${r.nFotos ? `<span class="badge badge-neutro"><i class="fas fa-camera"></i> ${r.nFotos}</span>` : ''}
               </div>
