@@ -292,6 +292,19 @@ textarea.input { resize: vertical; min-height: 72px; }
 .tag-restaurado { font-size: 10px; font-weight: 600; color: #4ade80; background: var(--success-dim); border-radius: 4px; padding: 1px 6px; }
 .lixeira-row--restaurado { opacity: 0.55; }
 
+.log-row { align-items: flex-start; }
+.log-type {
+  width: 36px; height: 36px; border-radius: 9px; border: 1px solid currentColor;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.log-chip { display: inline-flex; margin-left: 7px; padding: 1px 7px; border: 1px solid; border-radius: 999px; font-size: 10.5px; font-weight: 600; vertical-align: middle; }
+.log-date { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 2px; }
+.logs-manual-dates { align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+.logs-manual-dates .input { width: 150px; }
+.logs-footer { margin-top: 14px; text-align: center; font-size: 10.5px; color: var(--muted-2); }
+.logs-footer a { color: var(--muted); text-decoration: none; }
+.logs-footer a:hover { color: var(--accent); }
+
 /* ── Responsivo ───────────────────────────────────── */
 @media (max-width: 820px) {
   #appContent { flex-direction: column; }
@@ -299,4 +312,8 @@ textarea.input { resize: vertical; min-height: 72px; }
   .content-area { padding: 22px 18px 50px; }
   .form-row { grid-template-columns: 1fr; }
   .peca-linha { grid-template-columns: 1fr; }
+  .log-row { flex-direction: column; }
+  .log-date { white-space: normal; }
+  .logs-manual-dates { width: 100%; flex-wrap: wrap; }
+  .logs-manual-dates .input { width: calc(50% - 18px); min-width: 130px; }
 }

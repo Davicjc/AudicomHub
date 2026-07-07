@@ -290,6 +290,14 @@ service cloud.firestore {
       allow update: if !isClienteLinkcall() && pode('ronda-linkcall', 'restaurar', true);
       allow delete: if !isClienteLinkcall() && pode('ronda-linkcall', 'apagarPermanente', false);
     }
+    match /ronda-linkcall-logs/{id} {
+      allow read:   if temProjeto('ronda-linkcall') && pode('ronda-linkcall', 'visualizarLogs', false);
+      allow create: if temProjeto('ronda-linkcall')
+                    && request.resource.data.projeto == 'ronda-linkcall'
+                    && request.resource.data.usuarioUid == request.auth.uid
+                    && request.resource.data.criadoEm == request.time;
+      allow update, delete: if false;
+    }
 
     // ================================================================
     // CATCH-ALL: qualquer coleção não mapeada acima fica acessível
