@@ -69,7 +69,7 @@
 
                 <div class="nav-section-label" id="labelFerramentas" style="display:none">Ferramentas</div>
                 <div class="tab-wrapper" id="navLogs" style="display:none">
-                    <button class="tab-btn" data-view="logs" onclick="mostrarNotificacao('Pagina de logs em desenvolvimento.')">
+                    <button class="tab-btn" data-view="logs" onclick="irPara('logs')">
                         <div class="nav-icon"><i class="fas fa-list-alt"></i></div>
                         <span>Logs</span>
                     </button>
@@ -121,7 +121,7 @@
             window._locaisCliente    = Array.isArray(userData.rondaCallinkLocais) ? userData.rondaCallinkLocais : [];
 
             // Cliente externo = somente leitura, restrito aos locais vinculados.
-            if (window._isClienteExterno) window._can = { visualizar: true };
+            if (window._isClienteExterno) window._can = { visualizar: true, visualizarLogs: window._can.visualizarLogs === true };
 
             document.getElementById('bootLoading').style.display = 'none';
             document.getElementById('appContent').style.display = 'flex';
