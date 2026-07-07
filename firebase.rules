@@ -231,6 +231,14 @@ service cloud.firestore {
       allow update: if !isClienteCallink() && pode('ronda-callink', 'restaurar', true);
       allow delete: if !isClienteCallink() && pode('ronda-callink', 'apagarPermanente', false);
     }
+    match /ronda-callink-logs/{id} {
+      allow read:   if temProjeto('ronda-callink') && pode('ronda-callink', 'visualizarLogs', false);
+      allow create: if temProjeto('ronda-callink')
+                    && request.resource.data.projeto == 'ronda-callink'
+                    && request.resource.data.usuarioUid == request.auth.uid
+                    && request.resource.data.criadoEm == request.time;
+      allow update, delete: if false;
+    }
 
     // ================================================================
     // RONDA LINKCALL (clone independente — prefixo ronda-linkcall)

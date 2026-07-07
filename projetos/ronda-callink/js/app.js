@@ -9,8 +9,22 @@ const COL_LOCAIS   = () => db.collection('ronda-callink-locais');
 const COL_PRODUTOS = () => db.collection('ronda-callink-produtos');
 const COL_RONDAS   = () => db.collection('ronda-callink-rondas');
 const COL_LIXEIRA  = () => db.collection('lixeira-ronda-callink');
+const COL_LOGS     = () => db.collection('ronda-callink-logs');
 const SUB_CATRACAS = (localId) => COL_LOCAIS().doc(localId).collection('catracas');
 const SUB_FOTOS    = (rondaId) => COL_RONDAS().doc(rondaId).collection('fotos');
+
+const LOG_TIPOS = {
+  acesso:       { label: 'Acesso',       icon: 'fa-right-to-bracket', color: '#22c55e' },
+  navegacao:    { label: 'Navegação',    icon: 'fa-route',            color: '#3b82f6' },
+  criacao:      { label: 'Criação',      icon: 'fa-plus',             color: '#10b981' },
+  edicao:       { label: 'Edição',       icon: 'fa-pen',              color: '#60a5fa' },
+  lixeira:      { label: 'Lixeira',      icon: 'fa-trash',            color: '#f59e0b' },
+  restauracao:  { label: 'Restauração',  icon: 'fa-rotate-left',      color: '#06b6d4' },
+  exclusao:     { label: 'Exclusão',     icon: 'fa-skull',            color: '#ef4444' },
+  visualizacao: { label: 'Visualização', icon: 'fa-eye',              color: '#a855f7' },
+  relatorio:    { label: 'Relatório',    icon: 'fa-file-pdf',         color: '#f97316' },
+  cliente:      { label: 'Cliente',      icon: 'fa-user-shield',      color: '#14b8a6' },
+};
 
 /* ── Estado em memória ────────────────────────────── */
 let _locais   = [];
@@ -18,6 +32,11 @@ let _produtos = [];
 let _rondas   = [];   // documentos "leves" (sem fotos)
 let _tecnicos = null; // cache lazy p/ admin escolher técnico
 let _viewAtual = 'dashboard';
+let _logsFiltroTipo = 'todos';
+let _logsFiltroUsuario = 'todos';
+let _logsFiltroPeriodo = 'todos';
+let _logsDataInicio = '';
+let _logsDataFim = '';
 
 // estado do formulário de ronda aberto
 let _rondaEdit = null;
@@ -62,16 +81,98 @@ function formatarData(v) {
   const d = new Date(ms);
   return d.toLocaleDateString('pt-BR');
 }
-function hojeInput() {
-  const d = new Date();
+function formatarDataHora(v) {
+  const ms = tsMs(v); if (!ms) return '—';
+  return new Date(ms).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
+function dataInputLocal(d) {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
+}
+function hojeInput() {
+  return dataInputLocal(new Date());
 }
 function mesmoMes(ms) {
   if (!ms) return false;
   const d = new Date(ms), n = new Date();
   return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
+}
+
+function perfilUsuarioAtual() {
+  if (window._isSuperAdmin) return 'superadmin';
+  if (window._isAdmin) return 'admin';
+  if (window._isClienteExterno) return 'cliente';
+  return 'user';
+}
+
+function metaLogSegura(meta) {
+  const out = {};
+  Object.keys(meta || {}).forEach(k => {
+    const v = meta[k];
+    if (v == null) return;
+    if (typeof v === 'string') out[k] = v.slice(0, 500);
+    else if (typeof v === 'number' || typeof v === 'boolean') out[k] = v;
+  });
+  return out;
+}
+
+function registrarLog(tipo, acao, detalhe = '', meta = {}) {
+  if (!window._userUid) return;
+  COL_LOGS().add({
+    projeto: 'ronda-callink',
+    tipo,
+    tipoLabel: (LOG_TIPOS[tipo] || {}).label || tipo,
+    acao,
+    detalhe,
+    meta: metaLogSegura(meta),
+    view: _viewAtual || '',
+    usuarioUid: window._userUid || '',
+    usuarioNome: window._userNome || '',
+    usuarioEmail: window._userEmail || '',
+    perfil: perfilUsuarioAtual(),
+    clienteExterno: !!window._isClienteExterno,
+    criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+    criadoEmLocal: new Date().toISOString(),
+  }).catch(e => console.warn('Falha ao registrar log:', e.message));
+}
+
+function nomeViewLog(view) {
+  return ({
+    dashboard: 'Dashboard', rondas: 'Rondas', locais: 'Locais', produtos: 'Produtos / Peças',
+    clientes: 'Acessos de Clientes', logs: 'Logs', lixeira: 'Lixeira'
+  })[view] || view;
+}
+
+function limiteDia(dataStr, fim = false) {
+  if (!dataStr) return null;
+  const d = new Date(dataStr + (fim ? 'T23:59:59.999' : 'T00:00:00.000'));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function intervaloLogsAtual() {
+  const agora = new Date();
+  const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  if (_logsFiltroPeriodo === 'hoje') return { inicio: inicioHoje, fim: null };
+  if (_logsFiltroPeriodo === '7d') return { inicio: new Date(inicioHoje.getTime() - 6 * 86400000), fim: null };
+  if (_logsFiltroPeriodo === '30d') return { inicio: new Date(inicioHoje.getTime() - 29 * 86400000), fim: null };
+  if (_logsFiltroPeriodo === 'mesAtual') return { inicio: new Date(agora.getFullYear(), agora.getMonth(), 1), fim: null };
+  if (_logsFiltroPeriodo === 'mesPassado') {
+    return {
+      inicio: new Date(agora.getFullYear(), agora.getMonth() - 1, 1),
+      fim: new Date(agora.getFullYear(), agora.getMonth(), 0, 23, 59, 59, 999),
+    };
+  }
+  if (_logsFiltroPeriodo === 'manual') return { inicio: limiteDia(_logsDataInicio), fim: limiteDia(_logsDataFim, true) };
+  return { inicio: null, fim: null };
+}
+
+function setFiltroPeriodoLogs(valor) {
+  _logsFiltroPeriodo = valor;
+  const manual = valor === 'manual';
+  const campos = document.getElementById('logsDatasManuais');
+  if (campos) campos.style.display = manual ? 'flex' : 'none';
+  renderListaLogs();
 }
 
 /* ── Compressão de imagem → base64 JPEG ───────────── */
@@ -137,7 +238,9 @@ async function iniciarApp() {
   if (can.gerenciarProdutos) show('navProdutos');
   if (can.gerenciarClientes) show('navClientes');
   if (can.gerenciarLocais || can.gerenciarProdutos || can.gerenciarClientes) show('labelCadastros');
-  if (can.moverLixeira || can.restaurar || can.apagarPermanente) { show('navLixeira'); show('labelFerramentas'); }
+  if (can.visualizarLogs) show('navLogs');
+  if (can.moverLixeira || can.restaurar || can.apagarPermanente) show('navLixeira');
+  if (can.visualizarLogs || can.moverLixeira || can.restaurar || can.apagarPermanente) show('labelFerramentas');
 
   // zoom de fotos por delegação (evita handlers inline gigantes)
   document.addEventListener('click', e => {
@@ -149,6 +252,7 @@ async function iniciarApp() {
   } catch (e) {
     mostrarNotificacao('Erro ao carregar dados: ' + e.message, 'erro');
   }
+  registrarLog('acesso', 'Entrou no projeto', 'Acessou a página da Ronda Callink.');
   irPara('dashboard');
 }
 
@@ -180,10 +284,12 @@ function irPara(view) {
     locais:   () => window._can.gerenciarLocais,
     produtos: () => window._can.gerenciarProdutos,
     clientes: () => window._can.gerenciarClientes,
+    logs:     () => window._can.visualizarLogs,
     lixeira:  () => window._can.moverLixeira || window._can.restaurar || window._can.apagarPermanente,
   };
   if (bloqueio[view] && !bloqueio[view]()) view = 'dashboard';
 
+  const viewAnterior = _viewAtual;
   _viewAtual = view;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   const root = document.getElementById('viewRoot');
@@ -194,8 +300,10 @@ function irPara(view) {
     locais:    renderLocais,
     produtos:  renderProdutos,
     clientes:  renderClientes,
+    logs:      renderLogs,
     lixeira:   renderLixeira,
   }[view] || renderDashboard)(root);
+  if (view !== viewAnterior) registrarLog('navegacao', 'Entrou na aba', `Acessou a aba ${nomeViewLog(view)}.`, { view, origem: viewAnterior });
 }
 
 /* ================================================================
@@ -416,6 +524,7 @@ async function gerarRelatorioRondas(ids) {
     win.document.open();
     win.document.write(montarHTMLRelatorio(rondas, fotosPorRonda));
     win.document.close();
+    registrarLog('relatorio', 'Gerou relatório PDF', `Gerou relatório com ${rondas.length} ronda(s).`, { quantidade: rondas.length });
   } catch (e) {
     mostrarNotificacao('Erro ao gerar relatório: ' + e.message, 'erro');
   } finally {
@@ -569,6 +678,7 @@ function montarHTMLRelatorio(rondas, fotosPorRonda) {
 async function verRonda(id) {
   const r = _rondas.find(x => x.id === id);
   if (!r) return;
+  registrarLog('visualizacao', 'Visualizou ronda', `Visualizou a ronda de ${r.localNome || 'local'} em ${formatarData(r.dataRonda)}.`, { itemTipo: 'ronda', itemId: id, localId: r.localId || '' });
   abrirModal(`
     <div class="modal-header"><h3><i class="fas fa-clipboard-check"></i> Ronda — ${escapeHTML(r.localNome || '')}</h3>
       <button class="modal-close" onclick="fecharModal()">&times;</button></div>
@@ -952,6 +1062,9 @@ async function salvarRonda() {
     // atualiza contador de fotos
     const totalFotos = _fotosRonda.filter(f => !f._removida).length;
     await COL_RONDAS().doc(rondaId).update({ nFotos: totalFotos });
+    registrarLog(_rondaEdit ? 'edicao' : 'criacao', _rondaEdit ? 'Editou ronda' : 'Criou ronda', `${_rondaEdit ? 'Editou' : 'Registrou'} ronda de ${local ? local.nome : 'local'} em ${formatarData(dados.dataRonda)}.`, {
+      itemTipo: 'ronda', itemId: rondaId, localId, fotosAdicionadas: novas.length, fotosRemovidas: removidas.length
+    });
 
     mostrarNotificacao(_rondaEdit ? 'Ronda atualizada.' : 'Ronda registrada com sucesso.');
     fecharModal();
@@ -975,6 +1088,7 @@ async function moverRondaLixeira(id) {
       deletadoPor: window._userEmail || '', restaurado: false,
     });
     await COL_RONDAS().doc(id).update({ deletado: true, deletadoEm: firebase.firestore.FieldValue.serverTimestamp(), deletadoPor: window._userEmail || '' });
+    registrarLog('lixeira', 'Moveu ronda para lixeira', `Moveu a ronda de ${r.localNome || 'local'} (${formatarData(r.dataRonda)}) para a lixeira.`, { itemTipo: 'ronda', itemId: id, localId: r.localId || '' });
     mostrarNotificacao('Ronda movida para a lixeira.');
     await carregarRondas();
     renderListaRondas();
@@ -985,6 +1099,7 @@ async function moverRondaLixeira(id) {
 async function verHistoricoLocal(localId) {
   const local = _locais.find(l => l.id === localId);
   const rondasLocal = _rondas.filter(r => r.localId === localId);
+  registrarLog('visualizacao', 'Visualizou histórico do local', `Visualizou o histórico de ${local ? local.nome : 'local'}.`, { itemTipo: 'local', itemId: localId });
   abrirModal(`
     <div class="modal-header"><h3><i class="fas fa-clock-rotate-left"></i> Histórico — ${escapeHTML(local ? local.nome : '')}</h3>
       <button class="modal-close" onclick="fecharModal()">&times;</button></div>
@@ -1068,10 +1183,12 @@ async function salvarLocal(id) {
   try {
     if (id) {
       await COL_LOCAIS().doc(id).update(dados);
+      registrarLog('edicao', 'Editou local', `Editou o local ${nome}.`, { itemTipo: 'local', itemId: id });
     } else {
       dados.criadoPor = window._userEmail || '';
       dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
-      await COL_LOCAIS().add(dados);
+      const ref = await COL_LOCAIS().add(dados);
+      registrarLog('criacao', 'Criou local', `Criou o local ${nome}.`, { itemTipo: 'local', itemId: ref.id });
     }
     mostrarNotificacao('Local salvo.');
     fecharModal();
@@ -1087,6 +1204,7 @@ async function moverLocalLixeira(id) {
   try {
     await COL_LIXEIRA().add({ tipoItem: 'local', refId: id, titulo: `Local · ${l.nome}`, deletadoEm: firebase.firestore.FieldValue.serverTimestamp(), deletadoPor: window._userEmail || '', restaurado: false });
     await COL_LOCAIS().doc(id).update({ deletado: true, deletadoEm: firebase.firestore.FieldValue.serverTimestamp(), deletadoPor: window._userEmail || '' });
+    registrarLog('lixeira', 'Moveu local para lixeira', `Moveu o local ${l.nome} para a lixeira.`, { itemTipo: 'local', itemId: id });
     mostrarNotificacao('Local movido para a lixeira.');
     await carregarBase();
     renderLocais(document.getElementById('viewRoot'));
@@ -1129,7 +1247,9 @@ async function addCatraca(localId) {
   const nome = document.getElementById('cNome').value.trim();
   if (!nome) return mostrarNotificacao('Informe o nome da catraca.', 'erro');
   try {
-    await SUB_CATRACAS(localId).add({ nome, tipo: document.getElementById('cTipo').value.trim(), ativa: true, criadoPor: window._userEmail || '', criadoEm: firebase.firestore.FieldValue.serverTimestamp() });
+    const local = _locais.find(l => l.id === localId);
+    const ref = await SUB_CATRACAS(localId).add({ nome, tipo: document.getElementById('cTipo').value.trim(), ativa: true, criadoPor: window._userEmail || '', criadoEm: firebase.firestore.FieldValue.serverTimestamp() });
+    registrarLog('criacao', 'Criou catraca', `Criou a catraca ${nome}${local ? ' em ' + local.nome : ''}.`, { itemTipo: 'catraca', itemId: ref.id, localId });
     document.getElementById('cNome').value = ''; document.getElementById('cTipo').value = '';
     mostrarNotificacao('Catraca adicionada.');
     listarCatracas(localId);
@@ -1139,7 +1259,9 @@ async function addCatraca(localId) {
 async function removerCatraca(localId, catracaId) {
   if (!confirm('Remover esta catraca? As rondas anteriores mantêm o registro.')) return;
   try {
+    const local = _locais.find(l => l.id === localId);
     await SUB_CATRACAS(localId).doc(catracaId).delete();
+    registrarLog('exclusao', 'Removeu catraca', `Removeu uma catraca${local ? ' de ' + local.nome : ''}.`, { itemTipo: 'catraca', itemId: catracaId, localId });
     mostrarNotificacao('Catraca removida.');
     listarCatracas(localId);
   } catch (e) { mostrarNotificacao('Erro: ' + e.message, 'erro'); }
@@ -1229,10 +1351,12 @@ async function salvarProduto(id) {
   try {
     if (id) {
       await COL_PRODUTOS().doc(id).update(dados);
+      registrarLog('edicao', 'Editou produto', `Editou o produto ${nome}.`, { itemTipo: 'produto', itemId: id });
     } else {
       dados.criadoPor = window._userEmail || '';
       dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
-      await COL_PRODUTOS().add(dados);
+      const ref = await COL_PRODUTOS().add(dados);
+      registrarLog('criacao', 'Criou produto', `Criou o produto ${nome}.`, { itemTipo: 'produto', itemId: ref.id });
     }
     mostrarNotificacao('Produto salvo.');
     fecharModal();
@@ -1248,6 +1372,7 @@ async function moverProdutoLixeira(id) {
   try {
     await COL_LIXEIRA().add({ tipoItem: 'produto', refId: id, titulo: `Produto · ${p.nome}`, deletadoEm: firebase.firestore.FieldValue.serverTimestamp(), deletadoPor: window._userEmail || '', restaurado: false });
     await COL_PRODUTOS().doc(id).update({ deletado: true, deletadoEm: firebase.firestore.FieldValue.serverTimestamp(), deletadoPor: window._userEmail || '' });
+    registrarLog('lixeira', 'Moveu produto para lixeira', `Moveu o produto ${p.nome} para a lixeira.`, { itemTipo: 'produto', itemId: id });
     mostrarNotificacao('Produto movido para a lixeira.');
     await carregarBase();
     renderProdutos(document.getElementById('viewRoot'));
@@ -1297,8 +1422,103 @@ async function salvarCliente(uid) {
   const locais = Array.from(card.querySelectorAll('.cliLocal:checked')).map(cb => cb.value);
   try {
     await db.collection('users').doc(uid).update({ rondaCallinkCliente: ehCliente, rondaCallinkLocais: locais });
+    const nome = ((card.querySelector('.lr-title') || {}).textContent || uid).trim();
+    registrarLog('cliente', 'Atualizou acesso de cliente', `Atualizou o acesso de cliente de ${nome}.`, { usuarioAlvoUid: uid, clienteExterno: ehCliente, locais: locais.length });
     mostrarNotificacao('Acesso do cliente atualizado.');
   } catch (e) { mostrarNotificacao('Erro: ' + e.message, 'erro'); }
+}
+
+/* ================================================================
+   LOGS
+   ================================================================ */
+async function renderLogs(root) {
+  const opcoes = ['<option value="todos">Todos os tipos</option>']
+    .concat(Object.keys(LOG_TIPOS).map(k => `<option value="${k}" ${_logsFiltroTipo === k ? 'selected' : ''}>${escapeHTML(LOG_TIPOS[k].label)}</option>`))
+    .join('');
+  root.innerHTML = `
+    <div class="view-header">
+      <div class="view-title"><h2><i class="fas fa-list-alt"></i> Logs</h2><p>Histórico de acessos, navegação e ações realizadas na Ronda Callink.</p></div>
+      <div class="view-actions">
+        <select class="input" id="filtroTipoLog" style="width:auto" onchange="_logsFiltroTipo=this.value;renderListaLogs()">${opcoes}</select>
+        <select class="input" id="filtroUsuarioLog" style="width:auto" onchange="_logsFiltroUsuario=this.value;renderListaLogs()"><option value="todos">Todos os usuários</option></select>
+        <select class="input" id="filtroPeriodoLog" style="width:auto" onchange="setFiltroPeriodoLogs(this.value)">
+          <option value="todos" ${_logsFiltroPeriodo === 'todos' ? 'selected' : ''}>Todo o período</option>
+          <option value="hoje" ${_logsFiltroPeriodo === 'hoje' ? 'selected' : ''}>Hoje</option>
+          <option value="7d" ${_logsFiltroPeriodo === '7d' ? 'selected' : ''}>Últimos 7 dias</option>
+          <option value="30d" ${_logsFiltroPeriodo === '30d' ? 'selected' : ''}>Últimos 30 dias</option>
+          <option value="mesAtual" ${_logsFiltroPeriodo === 'mesAtual' ? 'selected' : ''}>Este mês</option>
+          <option value="mesPassado" ${_logsFiltroPeriodo === 'mesPassado' ? 'selected' : ''}>Mês passado</option>
+          <option value="manual" ${_logsFiltroPeriodo === 'manual' ? 'selected' : ''}>Manual</option>
+        </select>
+        <div class="logs-manual-dates" id="logsDatasManuais" style="display:${_logsFiltroPeriodo === 'manual' ? 'flex' : 'none'}">
+          <input type="date" class="input" id="logDataInicio" value="${escapeHTML(_logsDataInicio)}" onchange="_logsDataInicio=this.value;renderListaLogs()">
+          <span>até</span>
+          <input type="date" class="input" id="logDataFim" value="${escapeHTML(_logsDataFim)}" onchange="_logsDataFim=this.value;renderListaLogs()">
+        </div>
+        <button class="btn" onclick="renderListaLogs()"><i class="fas fa-rotate"></i> Atualizar</button>
+      </div>
+    </div>
+    <div id="listaLogs"><div class="loading-inline">Carregando logs…</div></div>`;
+  renderListaLogs();
+}
+
+async function renderListaLogs() {
+  const box = document.getElementById('listaLogs');
+  if (!box) return;
+  if (!window._can.visualizarLogs) {
+    box.innerHTML = `<div class="empty"><i class="fas fa-lock"></i>Acesso aos logs não liberado.</div>`;
+    return;
+  }
+  box.innerHTML = '<div class="loading-inline">Carregando logs…</div>';
+  try {
+    const intervalo = intervaloLogsAtual();
+    let query = COL_LOGS();
+    if (intervalo.inicio) query = query.where('criadoEm', '>=', firebase.firestore.Timestamp.fromDate(intervalo.inicio));
+    if (intervalo.fim) query = query.where('criadoEm', '<=', firebase.firestore.Timestamp.fromDate(intervalo.fim));
+    const snap = await query.orderBy('criadoEm', 'desc').limit(500).get();
+    let logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    atualizarFiltroUsuariosLogs(logs);
+    if (_logsFiltroTipo !== 'todos') logs = logs.filter(l => l.tipo === _logsFiltroTipo);
+    if (_logsFiltroUsuario !== 'todos') logs = logs.filter(l => (l.usuarioUid || l.usuarioEmail || '') === _logsFiltroUsuario);
+    if (!logs.length) { box.innerHTML = `<div class="empty"><i class="fas fa-list-alt"></i>Nenhum log encontrado.</div>`; return; }
+    box.innerHTML = '<div class="list">' + logs.map(l => {
+      const meta = LOG_TIPOS[l.tipo] || { label: l.tipo || 'Log', icon: 'fa-check', color: '#9ca3af' };
+      const usuario = l.usuarioNome || l.usuarioEmail || '—';
+      const perfil = l.perfil === 'superadmin' ? 'Super Admin' : l.perfil === 'admin' ? 'Admin' : l.perfil === 'cliente' ? 'Cliente' : 'Usuário';
+      const quando = formatarDataHora(l.criadoEm) !== '—' ? formatarDataHora(l.criadoEm) : formatarDataHora(l.criadoEmLocal);
+      return `
+        <div class="list-row log-row">
+          <div class="log-type" style="color:${meta.color};background:${meta.color}1f;border-color:${meta.color}55"><i class="fas ${meta.icon}"></i></div>
+          <div class="lr-main">
+            <div class="lr-title">${escapeHTML(l.acao || meta.label)} <span class="log-chip" style="color:${meta.color};border-color:${meta.color}55">${escapeHTML(meta.label)}</span></div>
+            <div class="lr-sub">${escapeHTML(l.detalhe || '')}</div>
+            <div class="item-autor"><i class="fas fa-user"></i> ${escapeHTML(usuario)} · ${escapeHTML(perfil)} · ${escapeHTML(l.usuarioEmail || '')}</div>
+          </div>
+          <div class="log-date">${escapeHTML(quando)}</div>
+        </div>`;
+    }).join('') + '</div>';
+  } catch (e) {
+    box.innerHTML = '<span style="color:var(--danger)">Erro ao carregar logs: ' + escapeHTML(e.message) + '</span>';
+  }
+}
+
+function atualizarFiltroUsuariosLogs(logs) {
+  const sel = document.getElementById('filtroUsuarioLog');
+  if (!sel) return;
+  const usuarios = [];
+  const vistos = new Set();
+  logs.forEach(l => {
+    const chave = l.usuarioUid || l.usuarioEmail || '';
+    if (!chave || vistos.has(chave)) return;
+    vistos.add(chave);
+    usuarios.push({ chave, nome: l.usuarioNome || l.usuarioEmail || chave, email: l.usuarioEmail || '' });
+  });
+  usuarios.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  if (_logsFiltroUsuario !== 'todos' && !vistos.has(_logsFiltroUsuario)) _logsFiltroUsuario = 'todos';
+  sel.innerHTML = '<option value="todos">Todos os usuários</option>' + usuarios.map(u =>
+    `<option value="${escapeHTML(u.chave)}" ${_logsFiltroUsuario === u.chave ? 'selected' : ''}>${escapeHTML(u.nome)}${u.email && u.email !== u.nome ? ' · ' + escapeHTML(u.email) : ''}</option>`
+  ).join('');
+  sel.value = _logsFiltroUsuario;
 }
 
 /* ================================================================
@@ -1344,6 +1564,7 @@ async function restaurarItem(lixeiraId) {
     const it = doc.data();
     await colDoTipo(it.tipoItem).doc(it.refId).update({ deletado: false });
     await COL_LIXEIRA().doc(lixeiraId).update({ restaurado: true });
+    registrarLog('restauracao', 'Restaurou item', `Restaurou ${it.titulo || it.tipoItem || 'item'} da lixeira.`, { itemTipo: it.tipoItem || '', itemId: it.refId || '', lixeiraId });
     mostrarNotificacao('Item restaurado.');
     await Promise.all([carregarBase(), carregarRondas()]);
     renderLixeira(document.getElementById('viewRoot'));
@@ -1362,6 +1583,7 @@ async function apagarPermanente(lixeiraId) {
     }
     await colDoTipo(it.tipoItem).doc(it.refId).delete();
     await COL_LIXEIRA().doc(lixeiraId).delete();
+    registrarLog('exclusao', 'Apagou permanentemente', `Apagou permanentemente ${it.titulo || it.tipoItem || 'item'}.`, { itemTipo: it.tipoItem || '', itemId: it.refId || '', lixeiraId });
     mostrarNotificacao('Item apagado permanentemente.');
     await Promise.all([carregarBase(), carregarRondas()]);
     renderLixeira(document.getElementById('viewRoot'));

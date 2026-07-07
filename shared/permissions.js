@@ -40,6 +40,7 @@ const PERMISSOES_CATALOGO = {
   },
   'ronda-callink': {
     visualizar:        { label: 'Visualizar rondas e dashboard', default: true  },
+    visualizarLogs:    { label: 'Visualizar logs',               default: false },
     registrarRonda:    { label: 'Registrar rondas',              default: true  },
     editar:            { label: 'Editar rondas',                 default: false },
     gerenciarLocais:   { label: 'Cadastrar locais e catracas',   default: false },
