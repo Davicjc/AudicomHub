@@ -75,6 +75,105 @@ service cloud.firestore {
       return isMembroAtivo() && meuDoc().get('rondaLinkcallCliente', false) == true;
     }
 
+    function statusRonda(dados) {
+      return dados.get('status', 'concluida');
+    }
+    function textoPreenchido(valor) {
+      return valor is string && valor.size() > 0;
+    }
+    function rondaConcluidaCompleta(dados) {
+      return textoPreenchido(dados.get('localId', ''))
+        && textoPreenchido(dados.get('tecnicoUid', ''))
+        && dados.get('dataRonda', null) is timestamp
+        && dados.get('horaInicio', null) is timestamp
+        && dados.get('horaTermino', null) is timestamp;
+    }
+    function statusRondaValido(dados) {
+      return statusRonda(dados) in ['rascunho', 'concluida']
+        && (statusRonda(dados) == 'rascunho' || rondaConcluidaCompleta(dados));
+    }
+    function isMinhaRonda(dados) {
+      return isAuth()
+        && (dados.get('tecnicoUid', '') == request.auth.uid
+            || dados.get('criadoPorUid', '') == request.auth.uid);
+    }
+
+    function rondaCallink(rid) {
+      return get(/databases/$(database)/documents/ronda-callink-rondas/$(rid)).data;
+    }
+    function podeLerRondaCallink(dados) {
+      return temProjeto('ronda-callink')
+        && (isAdmin()
+            || statusRonda(dados) == 'concluida'
+            || (!isClienteCallink() && isMinhaRonda(dados)));
+    }
+    function podeCriarRondaCallink(dados) {
+      return !isClienteCallink()
+        && pode('ronda-callink', 'registrarRonda', true)
+        && statusRondaValido(dados)
+        && (isAdmin() || isMinhaRonda(dados));
+    }
+    function podeAtualizarRondaCallink() {
+      return !isClienteCallink()
+        && statusRondaValido(request.resource.data)
+        && (isAdmin()
+            || (isMinhaRonda(resource.data)
+                && isMinhaRonda(request.resource.data)
+                && pode('ronda-callink', 'registrarRonda', true))
+            || (statusRonda(resource.data) == 'concluida'
+                && (pode('ronda-callink', 'registrarRonda', true)
+                    || pode('ronda-callink', 'editar', false)
+                    || pode('ronda-callink', 'moverLixeira', true)
+                    || pode('ronda-callink', 'restaurar', true))));
+    }
+    function podeEscreverFotoCallink(rid) {
+      return !isClienteCallink()
+        && (isAdmin()
+            || (isMinhaRonda(rondaCallink(rid))
+                && pode('ronda-callink', 'registrarRonda', true))
+            || (statusRonda(rondaCallink(rid)) == 'concluida'
+                && (pode('ronda-callink', 'registrarRonda', true)
+                    || pode('ronda-callink', 'editar', false))));
+    }
+
+    function rondaLinkcall(rid) {
+      return get(/databases/$(database)/documents/ronda-linkcall-rondas/$(rid)).data;
+    }
+    function podeLerRondaLinkcall(dados) {
+      return temProjeto('ronda-linkcall')
+        && (isAdmin()
+            || statusRonda(dados) == 'concluida'
+            || (!isClienteLinkcall() && isMinhaRonda(dados)));
+    }
+    function podeCriarRondaLinkcall(dados) {
+      return !isClienteLinkcall()
+        && pode('ronda-linkcall', 'registrarRonda', true)
+        && statusRondaValido(dados)
+        && (isAdmin() || isMinhaRonda(dados));
+    }
+    function podeAtualizarRondaLinkcall() {
+      return !isClienteLinkcall()
+        && statusRondaValido(request.resource.data)
+        && (isAdmin()
+            || (isMinhaRonda(resource.data)
+                && isMinhaRonda(request.resource.data)
+                && pode('ronda-linkcall', 'registrarRonda', true))
+            || (statusRonda(resource.data) == 'concluida'
+                && (pode('ronda-linkcall', 'registrarRonda', true)
+                    || pode('ronda-linkcall', 'editar', false)
+                    || pode('ronda-linkcall', 'moverLixeira', true)
+                    || pode('ronda-linkcall', 'restaurar', true))));
+    }
+    function podeEscreverFotoLinkcall(rid) {
+      return !isClienteLinkcall()
+        && (isAdmin()
+            || (isMinhaRonda(rondaLinkcall(rid))
+                && pode('ronda-linkcall', 'registrarRonda', true))
+            || (statusRonda(rondaLinkcall(rid)) == 'concluida'
+                && (pode('ronda-linkcall', 'registrarRonda', true)
+                    || pode('ronda-linkcall', 'editar', false))));
+    }
+
     // Update mexe SOMENTE nos campos listados (usado p/ proteger users).
     function apenasCampos(campos) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
@@ -208,22 +307,16 @@ service cloud.firestore {
                                   || pode('ronda-callink', 'apagarPermanente', false));
     }
     match /ronda-callink-rondas/{rid} {
-      allow read:   if temProjeto('ronda-callink');
-      allow create: if !isClienteCallink() && pode('ronda-callink', 'registrarRonda', true);
+      allow read:   if podeLerRondaCallink(resource.data);
+      allow create: if podeCriarRondaCallink(request.resource.data);
       // editar ronda + marcar deletado (lixeira) + restaurar são updates.
-      allow update: if !isClienteCallink()
-                      && (pode('ronda-callink', 'registrarRonda', true)
-                          || pode('ronda-callink', 'editar', false)
-                          || pode('ronda-callink', 'moverLixeira', true)
-                          || pode('ronda-callink', 'restaurar', true));
+      allow update: if podeAtualizarRondaCallink();
       allow delete: if !isClienteCallink() && pode('ronda-callink', 'apagarPermanente', false);
     }
     match /ronda-callink-rondas/{rid}/fotos/{fid} {
-      allow read:                 if temProjeto('ronda-callink');
+      allow read:                 if podeLerRondaCallink(rondaCallink(rid));
       // fotos são criadas/removidas ao registrar/editar a ronda.
-      allow create, update, delete : if !isClienteCallink()
-                                     && (pode('ronda-callink', 'registrarRonda', true)
-                                         || pode('ronda-callink', 'editar', false));
+      allow create, update, delete : if podeEscreverFotoCallink(rid);
     }
     match /lixeira-ronda-callink/{id} {
       allow read:   if temProjeto('ronda-callink');
@@ -269,20 +362,14 @@ service cloud.firestore {
                                   || pode('ronda-linkcall', 'apagarPermanente', false));
     }
     match /ronda-linkcall-rondas/{rid} {
-      allow read:   if temProjeto('ronda-linkcall');
-      allow create: if !isClienteLinkcall() && pode('ronda-linkcall', 'registrarRonda', true);
-      allow update: if !isClienteLinkcall()
-                      && (pode('ronda-linkcall', 'registrarRonda', true)
-                          || pode('ronda-linkcall', 'editar', false)
-                          || pode('ronda-linkcall', 'moverLixeira', true)
-                          || pode('ronda-linkcall', 'restaurar', true));
+      allow read:   if podeLerRondaLinkcall(resource.data);
+      allow create: if podeCriarRondaLinkcall(request.resource.data);
+      allow update: if podeAtualizarRondaLinkcall();
       allow delete: if !isClienteLinkcall() && pode('ronda-linkcall', 'apagarPermanente', false);
     }
     match /ronda-linkcall-rondas/{rid}/fotos/{fid} {
-      allow read:                 if temProjeto('ronda-linkcall');
-      allow create, update, delete : if !isClienteLinkcall()
-                                     && (pode('ronda-linkcall', 'registrarRonda', true)
-                                         || pode('ronda-linkcall', 'editar', false));
+      allow read:                 if podeLerRondaLinkcall(rondaLinkcall(rid));
+      allow create, update, delete : if podeEscreverFotoLinkcall(rid);
     }
     match /lixeira-ronda-linkcall/{id} {
       allow read:   if temProjeto('ronda-linkcall');

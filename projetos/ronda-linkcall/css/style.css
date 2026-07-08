@@ -220,6 +220,7 @@ textarea.input { resize: vertical; min-height: 72px; }
 .modal-close:hover { background: var(--card); color: var(--text); }
 .modal-body { padding: 22px; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px; border-top: 1px solid var(--border); }
+.autosave-status { margin-right: auto; color: var(--muted); font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
 
 /* ── Ronda: sub-blocos do formulário ──────────────── */
 .ronda-block { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 14px; background: var(--card); }
