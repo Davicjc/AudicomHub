@@ -1,0 +1,146 @@
+/* ================================================================
+   Sidebar mobile compartilhada
+   Transforma a navegação lateral dos projetos em menu off-canvas.
+   ================================================================ */
+
+.mobile-sidebar-toggle,
+.mobile-sidebar-close,
+.mobile-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 820px) {
+  .mobile-sidebar-toggle {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 900;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 42px;
+    padding: 0 14px;
+    border: 1px solid var(--border, rgba(255,255,255,0.1));
+    border-radius: 10px;
+    background: var(--bg-2, var(--surface-1, #111));
+    color: var(--text, var(--text-1, #e8e8e8));
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.36);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body.mobile-sidebar-open .mobile-sidebar-toggle {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .mobile-sidebar-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 18px;
+    right: 14px;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border, rgba(255,255,255,0.1));
+    border-radius: 9px;
+    background: var(--card, var(--surface-2, rgba(255,255,255,0.04)));
+    color: var(--muted, var(--text-2, rgba(255,255,255,0.6)));
+    font: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-sidebar-close:hover {
+    color: var(--text, var(--text-1, #fff));
+    border-color: var(--border-hover, rgba(255,255,255,0.18));
+  }
+
+  .sidebar-brand {
+    position: relative;
+    padding-right: 56px !important;
+  }
+
+  .mobile-sidebar-toggle i {
+    font-size: 14px;
+  }
+
+  .mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1090;
+    display: block;
+    background: rgba(0,0,0,0.62);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  body.mobile-sidebar-open {
+    overflow: hidden;
+  }
+
+  body.mobile-sidebar-open .mobile-sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  #appContent {
+    flex-direction: row !important;
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 1100 !important;
+    width: min(86vw, 320px) !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow-y: auto !important;
+    transform: translateX(-104%);
+    transition: transform 0.22s ease;
+    border-right: 1px solid var(--border, rgba(255,255,255,0.1)) !important;
+    border-bottom: 0 !important;
+    box-shadow: 18px 0 45px rgba(0,0,0,0.42);
+  }
+
+  body.mobile-sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-nav {
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    gap: 3px !important;
+    overflow: visible !important;
+  }
+
+  .tab-wrapper {
+    width: 100% !important;
+  }
+
+  .tab-btn {
+    width: 100% !important;
+    justify-content: flex-start !important;
+  }
+
+  .tab-btn .nav-icon {
+    display: flex !important;
+  }
+
+  .content-area {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-left: 0 !important;
+    padding-top: 72px !important;
+  }
+}
