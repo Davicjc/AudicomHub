@@ -658,10 +658,8 @@ function montarHTMLRelatorio(rondas, fotosPorRonda) {
 
         <div class="cols">
           <div class="info"><span class="info-k">Local visto:</span>${r.localVisto && r.localVisto.ok ? pill('OK', 'ok') : pill('Com ressalva', 'warn')}</div>
-          ${r.piso && r.piso.possui ? `<div class="info"><span class="info-k">Piso:</span>${r.piso.ok ? pill('OK', 'ok') : pill('Com ressalva', 'warn')}</div>` : ''}
         </div>
         ${(r.localVisto && r.localVisto.obs) ? `<div class="obs">${esc(r.localVisto.obs)}</div>` : ''}
-        ${(r.piso && r.piso.possui && r.piso.obs) ? `<div class="obs"><b>Piso:</b> ${esc(r.piso.obs)}</div>` : ''}
 
         <h3 class="blk-t">Catracas</h3>
         ${catracasHTML}
@@ -806,7 +804,6 @@ async function verRonda(id) {
       <span class="badge badge-neutro"><i class="fas fa-user"></i> ${escapeHTML(r.tecnicoNome || r.tecnicoEmail || '—')}</span>
     </div>
     ${linha('<i class="fas fa-eye"></i> Local visto', (r.localVisto && r.localVisto.ok ? '<span class="badge badge-ok">OK</span>' : '<span class="badge badge-alerta">Com ressalva</span>') + (r.localVisto && r.localVisto.obs ? '<div class="lr-sub" style="margin-top:8px">' + escapeHTML(r.localVisto.obs) + '</div>' : ''))}
-    ${r.piso && r.piso.possui ? linha('<i class="fas fa-layer-group"></i> Piso', (r.piso.ok ? '<span class="badge badge-ok">OK</span>' : '<span class="badge badge-alerta">Com ressalva</span>') + (r.piso.obs ? '<div class="lr-sub" style="margin-top:8px">' + escapeHTML(r.piso.obs) + '</div>' : '')) : ''}
     ${linha('<i class="fas fa-door-closed"></i> Catracas', catracasHtml)}
     ${pecasLegadoHtml}
     ${r.demaisInfos ? linha('<i class="fas fa-note-sticky"></i> Demais informações', '<div style="white-space:pre-wrap">' + escapeHTML(r.demaisInfos) + '</div>') : ''}
@@ -874,15 +871,6 @@ async function abrirFormRonda(id = null) {
       </div>
 
       <div class="ronda-block">
-        <div class="rb-title"><i class="fas fa-layer-group"></i> Piso</div>
-        <label class="checkline"><input type="checkbox" id="rPisoPossui" ${r && r.piso && r.piso.possui ? 'checked' : ''} onchange="document.getElementById('rPisoDetalhe').style.display=this.checked?'block':'none'"> Este local possui piso</label>
-        <div id="rPisoDetalhe" style="display:${r && r.piso && r.piso.possui ? 'block' : 'none'};margin-top:10px">
-          <label class="checkline"><input type="checkbox" id="rPisoOk" ${!r || (r.piso && r.piso.ok) ? 'checked' : ''}> Piso em bom estado</label>
-          <div class="form-group" style="margin-top:10px"><textarea class="input" id="rPisoObs" placeholder="Observações do piso…">${r && r.piso ? escapeHTML(r.piso.obs || '') : ''}</textarea></div>
-        </div>
-      </div>
-
-      <div class="ronda-block">
         <div class="rb-title"><i class="fas fa-door-closed"></i> Catracas</div>
         <div class="rb-hint">Para cada catraca: estado, peças trocadas e fotos específicas dela.</div>
         <div id="catracasBox"><span style="color:var(--muted)">Selecione um local para carregar as catracas.</span></div>
@@ -895,10 +883,10 @@ async function abrirFormRonda(id = null) {
 
       <div class="ronda-block">
         <div class="rb-title"><i class="fas fa-camera"></i> Fotos gerais</div>
-        <div class="rb-hint">Fotos do local, piso e visão geral. As fotos de cada catraca ficam dentro dela, acima.</div>
+        <div class="rb-hint">Fotos do local e visão geral. As fotos de cada catraca ficam dentro dela, acima.</div>
         <div style="display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap">
           <label class="field-label" style="margin:0">Seção da próxima foto:</label>
-          <select class="input" id="fotoSecao" style="width:auto"><option value="geral">Geral</option><option value="local">Local</option><option value="piso">Piso</option></select>
+          <select class="input" id="fotoSecao" style="width:auto"><option value="geral">Geral</option><option value="local">Local</option></select>
         </div>
         <div class="foto-grid" id="fotosBox"></div>
         <input type="file" id="fotoInput" accept="image/*" multiple style="display:none" onchange="adicionarFotos(this.files)">
@@ -1019,11 +1007,6 @@ function coletarDadosFormRonda(status) {
     horaInicioLocal: (document.getElementById('rHoraInicio') || {}).value || '',
     horaTerminoLocal: (document.getElementById('rHoraTermino') || {}).value || '',
     localVisto: { ok: !!(document.getElementById('rLocalOk') || {}).checked, obs: ((document.getElementById('rLocalObs') || {}).value || '').trim() },
-    piso: {
-      possui: !!(document.getElementById('rPisoPossui') || {}).checked,
-      ok: document.getElementById('rPisoOk') ? document.getElementById('rPisoOk').checked : false,
-      obs: document.getElementById('rPisoObs') ? document.getElementById('rPisoObs').value.trim() : ''
-    },
     catracas, pecasTrocadas,
     demaisInfos: ((document.getElementById('rInfos') || {}).value || '').trim(),
     status,
@@ -1225,7 +1208,9 @@ async function executarAutosaveRonda() {
     const rondaId = await garantirDocumentoRascunhoRonda();
     const rExist = _rondas.find(x => x.id === rondaId);
     const statusAtual = _rondaEraRascunho ? 'rascunho' : ((rExist && rExist.status) || 'concluida');
-    await COL_RONDAS().doc(rondaId).set(coletarDadosFormRonda(statusAtual), { merge: true });
+    const dados = coletarDadosFormRonda(statusAtual);
+    dados.piso = firebase.firestore.FieldValue.delete();
+    await COL_RONDAS().doc(rondaId).set(dados, { merge: true });
     await sincronizarFotosRonda(rondaId);
     setAutosaveRondaStatus('Salvo automaticamente às ' + formatarHora(new Date()));
   } catch (e) {
@@ -1236,11 +1221,18 @@ async function executarAutosaveRonda() {
   }
 }
 
+function validarRondaCompleta() {
+  if (!document.getElementById('rLocal').value) return 'Selecione o local.';
+  if (!document.getElementById('rData').value) return 'Informe a data da ronda.';
+  if (!document.getElementById('rHoraInicio').value) return 'Informe a hora de início.';
+  return '';
+}
+
 async function salvarRonda() {
   const localId = document.getElementById('rLocal').value;
   const dataStr = document.getElementById('rData').value;
-  if (!localId) return mostrarNotificacao('Selecione o local.', 'erro');
-  if (!dataStr)  return mostrarNotificacao('Informe a data da ronda.', 'erro');
+  const erroValidacao = validarRondaCompleta();
+  if (erroValidacao) return mostrarNotificacao(erroValidacao, 'erro');
 
   const local = _locais.find(l => l.id === localId);
   const btn = document.getElementById('btnSalvarRonda');
@@ -1250,6 +1242,7 @@ async function salvarRonda() {
   const rExist = _rondaEdit ? _rondas.find(x => x.id === _rondaEdit) : null;
   const eraCriacao = !_rondaEdit || _rondaEraRascunho || (rExist && rExist.status === 'rascunho');
   const dados = coletarDadosFormRonda('concluida');
+  dados.piso = firebase.firestore.FieldValue.delete();
   dados.finalizadaEm = firebase.firestore.FieldValue.serverTimestamp();
   dados.finalizadaEmLocal = new Date().toISOString();
 

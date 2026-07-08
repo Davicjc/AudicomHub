@@ -78,8 +78,19 @@ service cloud.firestore {
     function statusRonda(dados) {
       return dados.get('status', 'concluida');
     }
+    function textoPreenchido(valor) {
+      return valor is string && valor.size() > 0;
+    }
+    function rondaConcluidaCompleta(dados) {
+      return textoPreenchido(dados.get('localId', ''))
+        && textoPreenchido(dados.get('tecnicoUid', ''))
+        && dados.get('dataRonda', null) is timestamp
+        && dados.get('horaInicio', null) is timestamp
+        && dados.get('horaTermino', null) is timestamp;
+    }
     function statusRondaValido(dados) {
-      return statusRonda(dados) in ['rascunho', 'concluida'];
+      return statusRonda(dados) in ['rascunho', 'concluida']
+        && (statusRonda(dados) == 'rascunho' || rondaConcluidaCompleta(dados));
     }
     function isMinhaRonda(dados) {
       return isAuth()
