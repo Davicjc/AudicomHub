@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chamado Técnico — AUDICOM</title>
+    <meta name="description" content="Visualize o resumo do chamado técnico da AUDICOM">
+    <meta name="robots" content="noindex, nofollow">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <style>
+        :root {
+            --bg:        #07090f;
+            --surface-1: #0d1117;
+            --surface-2: #161b27;
+            --border:    rgba(255,255,255,0.07);
+            --border-md: rgba(255,255,255,0.12);
+            --primary:   #6366f1;
+            --primary-lt:#818cf8;
+            --success:   #10b981;
+            --error:     #ef4444;
+            --warning:   #f59e0b;
+            --text-1:    #e8eaf0;
+            --text-2:    #8b95a8;
+            --text-3:    #4a5568;
+            --mono:      'JetBrains Mono', monospace;
+        }
+        *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text-1);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── Header ── */
+        .pub-header {
+            background: var(--surface-1);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex; align-items: center; gap: 14px;
+            position: sticky; top: 0; z-index: 50;
+        }
+        .pub-header-logo {
+            width: 38px; height: 38px;
+            background: linear-gradient(135deg, var(--primary), #a855f7);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1rem; color: #fff; flex-shrink: 0;
+        }
+        .pub-header-info { flex: 1; min-width: 0; }
+        .pub-header-info strong { display: block; font-size: 0.95rem; font-weight: 600; }
+        .pub-header-info span   { font-size: 0.75rem; color: var(--text-2); }
+        .pub-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(16,185,129,0.12); color: var(--success);
+            border: 1px solid rgba(16,185,129,0.25);
+            border-radius: 20px; padding: 4px 12px;
+            font-size: 0.72rem; font-weight: 500; white-space: nowrap;
+        }
+        .pub-badge i { font-size: 0.6rem; animation: blink 2s ease-in-out infinite; }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+        /* ── Main ── */
+        .pub-main {
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 32px 20px 60px;
+        }
+
+        /* ── Gate de senha ── */
+        .pub-gate {
+            margin-top: 24px;
+            background: var(--surface-2);
+            border: 1px solid var(--border-md);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+            animation: slideUp 0.4s ease;
+        }
+        .pub-gate-hero {
+            background: linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.06) 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 32px 32px 28px;
+            text-align: center;
+        }
+        .pub-gate-icon {
+            width: 60px; height: 60px;
+            background: rgba(99,102,241,0.12);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.4rem; color: var(--primary-lt);
+            margin: 0 auto 18px;
+        }
+        .pub-gate-hero h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 6px; }
+        .pub-gate-hero p  { font-size: 0.84rem; color: var(--text-2); }
+
+        .pub-gate-body { padding: 28px 32px 32px; }
+        .pub-gate-label {
+            display: block;
+            font-size: 0.75rem; font-weight: 500;
+            color: var(--text-2); margin-bottom: 8px;
+            letter-spacing: 0.03em;
+        }
+        .pub-gate-input-wrap {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        .pub-gate-input-wrap i {
+            position: absolute; left: 14px; top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-3); font-size: 0.85rem;
+            pointer-events: none;
+        }
+        .pub-gate-input {
+            width: 100%;
+            background: var(--surface-1);
+            border: 1px solid var(--border-md);
+            border-radius: 10px;
+            color: var(--text-1);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            padding: 12px 16px 12px 40px;
+            outline: none;
+            transition: border-color 0.18s, box-shadow 0.18s;
+        }
+        .pub-gate-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+        .pub-gate-input.error {
+            border-color: var(--error);
+            box-shadow: 0 0 0 3px rgba(239,68,68,0.12);
+            animation: shake 0.35s ease;
+        }
+        @keyframes shake {
+            0%,100%{transform:translateX(0)}
+            20%{transform:translateX(-6px)}
+            40%{transform:translateX(6px)}
+            60%{transform:translateX(-4px)}
+            80%{transform:translateX(4px)}
+        }
+        .pub-gate-error {
+            display: flex; align-items: center; gap: 7px;
+            font-size: 0.8rem; color: var(--error);
+            margin-bottom: 16px; min-height: 20px;
+        }
+        .pub-gate-btn {
+            width: 100%;
+            background: var(--primary);
+            color: #fff; border: none;
+            border-radius: 10px; padding: 13px;
+            font-size: 0.9rem; font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: background 0.18s, transform 0.12s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .pub-gate-btn:hover  { background: #4f46e5; }
+        .pub-gate-btn:active { transform: scale(0.99); }
+        .pub-gate-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        /* ── Estado ── */
+        .pub-state { text-align: center; padding: 80px 20px; }
+        .pub-state-icon {
+            width: 64px; height: 64px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; margin: 0 auto 20px;
+        }
+        .pub-state-icon.loading { background: rgba(99,102,241,0.12); color: var(--primary-lt); }
+        .pub-state-icon.error   { background: rgba(239,68,68,0.12);  color: var(--error); }
+        .pub-state h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
+        .pub-state p  { color: var(--text-2); font-size: 0.875rem; }
+
+        /* ── Card do chamado ── */
+        .pub-card {
+            background: var(--surface-2);
+            border: 1px solid var(--border-md);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 32px rgba(0,0,0,0.4);
+            animation: slideUp 0.4s ease;
+        }
+        @keyframes slideUp {
+            from { opacity:0; transform:translateY(20px); }
+            to   { opacity:1; transform:translateY(0); }
+        }
+        .pub-card-hero {
+            background: linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(168,85,247,0.08) 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 28px 28px 24px;
+        }
+        .pub-card-eyebrow {
+            font-family: var(--mono); font-size: 0.65rem;
+            letter-spacing: 0.14em; text-transform: uppercase;
+            color: var(--primary-lt); margin-bottom: 10px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .pub-card-eyebrow::before {
+            content: ''; display: inline-block;
+            width: 20px; height: 2px;
+            background: var(--primary); border-radius: 2px;
+        }
+        .pub-card-title { font-size: 1.4rem; font-weight: 700; line-height: 1.3; margin-bottom: 6px; }
+        .pub-card-cod {
+            font-family: var(--mono); font-size: 0.8rem;
+            color: var(--text-2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+        }
+        .pub-card-cod i { color: var(--primary); }
+        .pub-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+        .pub-meta-item {
+            display: flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+            border-radius: 8px; padding: 6px 12px;
+            font-size: 0.78rem; color: var(--text-2);
+        }
+        .pub-meta-item i { color: var(--primary-lt); font-size: 0.72rem; }
+        .pub-section { padding: 22px 28px; border-bottom: 1px solid var(--border); }
+        .pub-section:last-child { border-bottom: none; }
+        .pub-section-label {
+            font-family: var(--mono); font-size: 0.62rem;
+            letter-spacing: 0.14em; text-transform: uppercase;
+            color: var(--text-3); margin-bottom: 14px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .pub-section-label i { color: var(--primary); font-size: 0.7rem; }
+        .pub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 14px; }
+        .pub-field { display: flex; flex-direction: column; gap: 4px; }
+        .pub-field-lbl { font-size: 0.7rem; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+        .pub-field-val { font-size: 0.88rem; color: var(--text-1); font-weight: 500; word-break: break-word; }
+        .pub-falha-box {
+            background: rgba(239,68,68,0.06);
+            border: 1px solid rgba(239,68,68,0.15);
+            border-radius: 10px; padding: 16px;
+        }
+        .pub-falha-label {
+            font-size: 0.68rem; color: var(--error); font-weight: 600;
+            letter-spacing: 0.08em; text-transform: uppercase;
+            display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+        }
+        .pub-falha-text { font-size: 0.9rem; line-height: 1.65; color: #e8d5d5; white-space: pre-wrap; word-break: break-word; }
+        .pub-bloco {
+            margin-top: 12px; background: var(--surface-1);
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 12px 14px; font-family: var(--mono); font-size: 0.76rem;
+            color: #9fb0c9; line-height: 1.7; white-space: pre-wrap;
+            word-break: break-word; max-height: 260px; overflow: auto;
+        }
+        .pub-instrucao {
+            background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.2);
+            border-radius: 10px; padding: 14px 16px;
+            font-size: 0.88rem; color: #f0d598; line-height: 1.6;
+        }
+        .pub-card-footer {
+            padding: 18px 28px; background: var(--surface-1);
+            border-top: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 12px;
+        }
+        .pub-footer-brand { font-size: 0.72rem; color: var(--text-3); display: flex; align-items: center; gap: 6px; }
+        .pub-footer-brand i { color: var(--primary); }
+        .pub-btn-copy {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: var(--primary); color: #fff; border: none;
+            border-radius: 8px; padding: 9px 18px;
+            font-size: 0.82rem; font-weight: 500; font-family: 'Inter', sans-serif;
+            cursor: pointer; transition: background 0.18s, transform 0.12s;
+        }
+        .pub-btn-copy:hover  { background: #4f46e5; transform: translateY(-1px); }
+        .pub-btn-copy:active { transform: translateY(0); }
+        .pub-btn-copy.copied { background: var(--success); }
+
+        /* ── Toast ── */
+        .pub-toast {
+            position: fixed; bottom: 24px; left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: #1a2035; border: 1px solid rgba(99,102,241,0.3);
+            border-radius: 12px; padding: 12px 20px;
+            display: flex; align-items: center; gap: 10px;
+            font-size: 0.84rem; color: var(--text-1);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+            z-index: 999; white-space: nowrap;
+        }
+        .pub-toast.show { transform: translateX(-50%) translateY(0); }
+        .pub-toast i { color: var(--success); }
+
+        @media (max-width: 480px) {
+            .pub-main { padding: 16px 12px 48px; }
+            .pub-gate-hero, .pub-gate-body, .pub-card-hero, .pub-section { padding: 20px; }
+            .pub-card-footer { padding: 16px 20px; flex-direction: column; align-items: flex-start; }
+            .pub-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="pub-header">
+        <div class="pub-header-logo"><i class="fas fa-headset"></i></div>
+        <div class="pub-header-info">
+            <strong>AUDICOM — Suporte Técnico</strong>
+            <span>Resumo de chamado (somente leitura)</span>
+        </div>
+        <div class="pub-badge"><i class="fas fa-circle"></i> Oficial</div>
+    </header>
+
+    <main class="pub-main" id="pubMain">
+        <div class="pub-state">
+            <div class="pub-state-icon loading">
+                <i class="fas fa-spinner fa-spin"></i>
+            </div>
+            <h2>Carregando…</h2>
+            <p>Verificando acesso.</p>
+        </div>
+    </main>
+
+    <div class="pub-toast" id="pubToast">
+        <i class="fas fa-check-circle"></i>
+        <span id="pubToastMsg">Copiado!</span>
+    </div>
+
+    <script>
+        // ── Config Firebase (só Project ID e API Key — sem SDK) ──
+        const FIREBASE_PROJECT = 'hubaudicom';
+        const FIREBASE_API_KEY = 'AIzaSyCbsUSRwmX8REUp8koeENae6PeCtaURPRQ';
+
+        function firestoreUrl(col, docId) {
+            return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/${col}/${docId}?key=${FIREBASE_API_KEY}`;
+        }
+
+        function parseDoc(doc) {
+            if (!doc || !doc.fields) return null;
+            const out = {};
+            for (const [k, v] of Object.entries(doc.fields)) {
+                if      ('stringValue'    in v) out[k] = v.stringValue;
+                else if ('booleanValue'   in v) out[k] = v.booleanValue;
+                else if ('integerValue'   in v) out[k] = parseInt(v.integerValue, 10);
+                else if ('doubleValue'    in v) out[k] = v.doubleValue;
+                else if ('timestampValue' in v) out[k] = { _ts: true, value: v.timestampValue };
+                else if ('nullValue'      in v) out[k] = null;
+                else out[k] = v;
+            }
+            return out;
+        }
+
+        // ── Helpers ──────────────────────────────────────────────
+        function esc(str) {
+            return String(str == null ? '' : str)
+                .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        }
+        function fmtTs(val) {
+            if (!val) return '—';
+            const d = new Date(val._ts ? val.value : val);
+            if (isNaN(d)) return '—';
+            const p = n => String(n).padStart(2,'0');
+            return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        }
+        function falhaTopo(f) {
+            const M = 'DADOS HUBSOFT ────>';
+            const p = (f||'').indexOf(M);
+            return (p !== -1 ? (f||'').slice(0,p) : (f||'')).trim();
+        }
+        function falhaBloco(f) {
+            const M = 'DADOS HUBSOFT ────>';
+            const p = (f||'').indexOf(M);
+            return p !== -1 ? (f||'').slice(p) : '';
+        }
+        function showToast(msg) {
+            const t = document.getElementById('pubToast');
+            document.getElementById('pubToastMsg').textContent = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2800);
+        }
+        function showError(titulo, msg) {
+            document.getElementById('pubMain').innerHTML = `
+                <div class="pub-state">
+                    <div class="pub-state-icon error"><i class="fas fa-triangle-exclamation"></i></div>
+                    <h2>${esc(titulo)}</h2>
+                    <p>${esc(msg)}</p>
+                </div>`;
+        }
+        async function sha256(str) {
+            if (!str) return '';
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+        }
+
+        // ── Autenticação e Comentários (REST) ─────────────────────
+        let _userToken = null;
+        let _userEmailLogado = '';
+
+        async function _comentarLogin() {
+            const em = document.getElementById('comLoginEmail').value.trim();
+            const pw = document.getElementById('comLoginSenha').value;
+            const btn = document.getElementById('btnComLogin');
+            const err = document.getElementById('comLoginError');
+            if(!em || !pw) return;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Autenticando...';
+            err.style.display = 'none';
+            
+            try {
+                const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({email: em, password: pw, returnSecureToken: true})
+                });
+                const data = await res.json();
+                if(res.ok && data.idToken) {
+                    _userToken = data.idToken;
+                    _userEmailLogado = data.email;
+                    document.getElementById('comentarioLoginArea').style.display = 'none';
+                    document.getElementById('comentarioWriteArea').style.display = 'block';
+                    document.getElementById('comLoggedEmail').textContent = _userEmailLogado;
+                    document.getElementById('comLoginSenha').value = '';
+                } else {
+                    err.textContent = 'E-mail ou senha inválidos. Tente novamente.';
+                    err.style.display = 'block';
+                }
+            } catch(e) {
+                err.textContent = 'Erro de conexão.';
+                err.style.display = 'block';
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Validar Identidade';
+        }
+
+        function _comentarLogout() {
+            _userToken = null;
+            _userEmailLogado = '';
+            document.getElementById('comentarioLoginArea').style.display = 'block';
+            document.getElementById('comentarioWriteArea').style.display = 'none';
+        }
+
+        async function _enviarComentario() {
+            const txt = document.getElementById('comTexto').value.trim();
+            if(!txt || !_userToken || !window._chamadoData) return;
+            const btn = document.getElementById('btnComEnviar');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+            
+            const docId = window._chamadoData.id;
+            const payload = {
+                fields: {
+                    texto: { stringValue: txt },
+                    criadoPor: { stringValue: _userEmailLogado },
+                    criadoEm: { timestampValue: new Date().toISOString() }
+                }
+            };
+            
+            try {
+                const res = await fetch(`https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/chamados-historico/${docId}/comentarios?key=${FIREBASE_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${_userToken}` },
+                    body: JSON.stringify(payload)
+                });
+                if(res.ok) {
+                    document.getElementById('comTexto').value = '';
+                    showToast('Comentário adicionado!');
+                    _carregarComentarios(docId);
+                } else {
+                    showToast('Falha de permissão (apenas membros).');
+                }
+            } catch(e) {
+                showToast('Erro ao enviar.');
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> Adicionar Comentário';
+        }
+
+        async function _carregarComentarios(docId) {
+            const listEl = document.getElementById('comentariosList');
+            if(!listEl) return;
+            
+            try {
+                const res = await fetch(`https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/chamados-historico/${docId}/comentarios?key=${FIREBASE_API_KEY}`);
+                const data = await res.json();
+                if(res.ok && data.documents && data.documents.length) {
+                    const arr = data.documents.map(parseDoc).sort((a,b) => {
+                        const ta = new Date(a.criadoEm?._ts ? a.criadoEm.value : a.criadoEm).getTime();
+                        const tb = new Date(b.criadoEm?._ts ? b.criadoEm.value : b.criadoEm).getTime();
+                        return ta - tb;
+                    });
+                    listEl.innerHTML = arr.map(c => `
+                        <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-size:0.75rem;">
+                                <strong style="color:var(--primary-lt);"><i class="fas fa-user-circle"></i> ${esc(c.criadoPor)}</strong>
+                                <span style="color:var(--text-3);"><i class="far fa-clock"></i> ${esc(fmtTs(c.criadoEm))}</span>
+                            </div>
+                            <div style="font-size:0.88rem; color:var(--text-1); white-space:pre-wrap; line-height:1.5;">${esc(c.texto)}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    listEl.innerHTML = '<div style="font-size:0.8rem; color:var(--text-3); text-align:center; padding:10px 0;">Nenhum comentário adicionado.</div>';
+                }
+            } catch(e) {
+                listEl.innerHTML = '<div style="font-size:0.8rem; color:var(--error); text-align:center; padding:10px 0;">Erro ao carregar comentários.</div>';
+            }
+        }
+
+
+        // ── Gate de senha ─────────────────────────────────────────
+        function showGate(onSuccess) {
+            document.getElementById('pubMain').innerHTML = `
+            <div class="pub-gate">
+                <div class="pub-gate-hero">
+                    <div class="pub-gate-icon"><i class="fas fa-lock"></i></div>
+                    <h2>Link protegido</h2>
+                    <p>Digite a senha para visualizar os dados do chamado.</p>
+                </div>
+                <div class="pub-gate-body">
+                    <label class="pub-gate-label" for="gateInput">
+                        <i class="fas fa-key"></i>&nbsp; Senha de acesso
+                    </label>
+                    <div class="pub-gate-input-wrap">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="gateInput" class="pub-gate-input"
+                            placeholder="Digite a senha…" autocomplete="current-password"
+                            onkeydown="if(event.key==='Enter') _verificarSenha()">
+                    </div>
+                    <div class="pub-gate-error" id="gateError" style="display:none">
+                        <i class="fas fa-circle-exclamation"></i>
+                        <span id="gateErrorMsg">Senha incorreta. Tente novamente.</span>
+                    </div>
+                    <button class="pub-gate-btn" id="gateBtn" onclick="_verificarSenha()">
+                        <i class="fas fa-unlock-alt"></i> Acessar chamado
+                    </button>
+                </div>
+            </div>`;
+
+            // Foca automaticamente
+            setTimeout(() => {
+                const inp = document.getElementById('gateInput');
+                if (inp) inp.focus();
+            }, 100);
+
+            window._gateOnSuccess = onSuccess;
+        }
+
+        async function _verificarSenha() {
+            const inp = document.getElementById('gateInput');
+            const btn = document.getElementById('gateBtn');
+            const errEl = document.getElementById('gateError');
+            if (!inp || !btn) return;
+
+            const senha = inp.value;
+            if (!senha) {
+                inp.classList.add('error');
+                inp.addEventListener('animationend', () => inp.classList.remove('error'), { once: true });
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando…';
+            if (errEl) errEl.style.display = 'none';
+
+            try {
+                const hashDigitado = await sha256(senha.trim());
+                if (hashDigitado === window._senhaHashEsperado) {
+                    // Senha correta — continua
+                    if (window._gateOnSuccess) window._gateOnSuccess();
+                } else {
+                    inp.value = '';
+                    inp.classList.add('error');
+                    inp.addEventListener('animationend', () => inp.classList.remove('error'), { once: true });
+                    if (errEl) {
+                        document.getElementById('gateErrorMsg').textContent = 'Senha incorreta. Tente novamente.';
+                        errEl.style.display = 'flex';
+                    }
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-unlock-alt"></i> Acessar chamado';
+                    setTimeout(() => { const i = document.getElementById('gateInput'); if(i) i.focus(); }, 50);
+                }
+            } catch(e) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-unlock-alt"></i> Acessar chamado';
+            }
+        }
+
+        // ── Render do chamado ──────────────────────────────────────
+        function campo(lbl, val) {
+            if (!val) return '';
+            return `<div class="pub-field">
+                <div class="pub-field-lbl">${lbl}</div>
+                <div class="pub-field-val">${esc(val)}</div>
+            </div>`;
+        }
+
+        function renderChamado(r) {
+            const falhaTop   = falhaTopo(r.falha) || '—';
+            const falhaExtra = falhaBloco(r.falha);
+
+            document.getElementById('pubMain').innerHTML = `
+            <div class="pub-card">
+                <div class="pub-card-hero">
+                    <div class="pub-card-eyebrow">chamado técnico audicom</div>
+                    <div class="pub-card-title">${esc(r.cliente || 'Sem nome')}</div>
+                    <div class="pub-card-cod">
+                        <i class="fas fa-hashtag"></i> ${esc(r.codigo || '—')}
+                        ${r.ponto ? `<span style="color:var(--text-3)">·</span><i class="fas fa-wifi"></i> ${esc(r.ponto)}` : ''}
+                    </div>
+                    <div class="pub-meta">
+                        ${r.protocolo      ? `<div class="pub-meta-item"><i class="fas fa-file-alt"></i> Protocolo: <strong>${esc(r.protocolo)}</strong></div>` : ''}
+                        ${r.protocoloJames ? `<div class="pub-meta-item"><i class="fas fa-ticket-alt"></i> James: <strong>${esc(r.protocoloJames)}</strong></div>` : ''}
+                        ${r.criadoEm       ? `<div class="pub-meta-item"><i class="fas fa-clock"></i> ${esc(fmtTs(r.criadoEm))}</div>` : ''}
+                        ${r.criadoPor      ? `<div class="pub-meta-item"><i class="fas fa-user"></i> ${esc(r.criadoPor)}</div>` : ''}
+                    </div>
+                </div>
+
+                <div class="pub-section">
+                    <div class="pub-section-label"><i class="fas fa-triangle-exclamation"></i> Falha relatada</div>
+                    <div class="pub-falha-box">
+                        <div class="pub-falha-label"><i class="fas fa-exclamation-circle"></i> Problema</div>
+                        <div class="pub-falha-text">${esc(falhaTop)}</div>
+                        ${falhaExtra ? `<div class="pub-bloco">${esc(falhaExtra)}</div>` : ''}
+                    </div>
+                </div>
+
+                <div class="pub-section">
+                    <div class="pub-section-label"><i class="fas fa-calendar-check"></i> Dados de agendamento</div>
+                    <div class="pub-grid">
+                        ${campo('Telefone', r.telefone)}
+                        ${campo('Disponibilidade', r.disponibilidade)}
+                        ${campo('Recebe o técnico', r.responsavel)}
+                        ${campo('Local / Endereço', r.localCliente)}
+                    </div>
+                </div>
+
+                ${r.instrucao ? `
+                <div class="pub-section">
+                    <div class="pub-section-label"><i class="fas fa-clipboard"></i> Instrução</div>
+                    <div class="pub-instrucao">${esc(r.instrucao)}</div>
+                </div>` : ''}
+
+                ${r.resumo ? `
+                <div class="pub-section">
+                    <div class="pub-section-label"><i class="fas fa-robot"></i> Resumo IA</div>
+                    <div class="pub-bloco" style="border-color:rgba(16,185,129,0.3); background:rgba(16,185,129,0.06); color:#e8eaf0;">${esc(r.resumo)}</div>
+                </div>` : ''}
+
+                <div class="pub-section">
+                    <div class="pub-section-label"><i class="fas fa-comments"></i> Atualizações e Comentários</div>
+                    <div id="comentariosList">
+                        <div style="font-size:0.8rem; color:var(--text-3); text-align:center; padding:10px 0;"><i class="fas fa-spinner fa-spin"></i> Carregando comentários...</div>
+                    </div>
+                    
+                    <div id="addComentarioBox" style="margin-top:20px; background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:12px; padding:16px;">
+                        <div id="comentarioLoginArea">
+                            <p style="font-size:0.8rem; color:var(--text-2); margin-bottom:12px;">É membro ativo? <strong>Faça login</strong> para interagir no chamado.</p>
+                            <input type="email" id="comLoginEmail" class="pub-gate-input" placeholder="E-mail" style="margin-bottom:8px; padding:10px; font-size:0.85rem;" autocomplete="username">
+                            <input type="password" id="comLoginSenha" class="pub-gate-input" placeholder="Senha" style="margin-bottom:12px; padding:10px; font-size:0.85rem;" autocomplete="current-password" onkeydown="if(event.key==='Enter') _comentarLogin()">
+                            <button class="pub-gate-btn" id="btnComLogin" onclick="_comentarLogin()" style="padding:10px;"><i class="fas fa-sign-in-alt"></i> Validar Identidade</button>
+                            <div id="comLoginError" style="color:var(--error); font-size:0.8rem; margin-top:8px; display:none;"></div>
+                        </div>
+                        <div id="comentarioWriteArea" style="display:none;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                                <span style="font-size:0.75rem; color:var(--success);"><i class="fas fa-user-check"></i> Logado: <strong id="comLoggedEmail"></strong></span>
+                                <button onclick="_comentarLogout()" style="background:none; border:none; color:var(--text-3); font-size:0.75rem; cursor:pointer; text-decoration:underline;">Sair da conta</button>
+                            </div>
+                            <textarea id="comTexto" class="pub-gate-input" placeholder="Digite seu comentário..." style="min-height:80px; margin-bottom:12px; padding:10px; font-size:0.85rem; resize:vertical;"></textarea>
+                            <button class="pub-gate-btn" id="btnComEnviar" onclick="_enviarComentario()" style="padding:10px;"><i class="fas fa-paper-plane"></i> Enviar Comentário</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pub-card-footer">
+                    <div class="pub-footer-brand">
+                        <i class="fas fa-lock"></i> Registro imutável · AUDICOM Hub
+                    </div>
+                    <button class="pub-btn-copy" id="btnCopiar" onclick="copiarChamado()">
+                        <i class="fas fa-copy"></i> Copiar chamado
+                    </button>
+                </div>
+            </div>`;
+
+            document.title = `Chamado #${r.codigo || ''} — ${r.cliente || 'AUDICOM'}`;
+            window._chamadoData = r;
+            
+            // Dispara carregamento assíncrono dos comentários
+            if (r.id) _carregarComentarios(r.id);
+        }
+
+        function copiarChamado() {
+            const r = window._chamadoData;
+            if (!r) return;
+            const txt = `🔴 Chamados 🔴\n\n▪️ Código HubSoft: ${r.codigo||''}\n▪️ Cliente HubSoft: ${r.cliente||''}\n▪️ Ponto HubSoft: ${r.ponto||''}\n\n▪️ Falha: ${r.falha||''}\n\n▪️ Telefone: ${r.telefone||''}\n▪️ Disponibilidade: ${r.disponibilidade||''}\n▪️ Responsável pelo local: ${r.responsavel||''}\n▪️ Local: ${r.localCliente||''}\n▪️ Protocolo HubSoft: ${r.protocolo||''}\n▪️ Protocolo James: ${r.protocoloJames||''}`;
+            navigator.clipboard.writeText(txt).then(() => {
+                const btn = document.getElementById('btnCopiar');
+                if (btn) {
+                    btn.classList.add('copied');
+                    btn.innerHTML = '<i class="fas fa-check"></i> Copiado!';
+                    setTimeout(() => {
+                        btn.classList.remove('copied');
+                        btn.innerHTML = '<i class="fas fa-copy"></i> Copiar chamado';
+                    }, 2200);
+                }
+                showToast('Chamado copiado!');
+            });
+        }
+
+        // ── Init principal ────────────────────────────────────────
+        (async function init() {
+            const params = new URLSearchParams(location.search);
+            const id = params.get('id') || location.hash.replace('#','');
+            if (!id) { showError('Link inválido', 'Nenhum chamado foi especificado neste link.'); return; }
+
+            try {
+                // 1. Busca hash da senha e o chamado em paralelo
+                const [resConfig, resChamado] = await Promise.all([
+                    fetch(firestoreUrl('publico-config', 'chamado-link')),
+                    fetch(firestoreUrl('chamados-historico', id))
+                ]);
+
+                // Valida o chamado
+                const jsonChamado = await resChamado.json();
+                if (!resChamado.ok || jsonChamado.error) {
+                    showError('Acesso negado', 'Chamado não encontrado ou sem permissão de acesso.');
+                    return;
+                }
+                const r = parseDoc(jsonChamado);
+                if (!r || !r.publico) {
+                    showError('Acesso restrito', 'Este chamado não tem compartilhamento público habilitado.');
+                    return;
+                }
+
+                // 2. Verifica se há senha configurada
+                let senhaHash = '';
+                if (resConfig.ok) {
+                    const jsonConfig = await resConfig.json();
+                    const cfg = parseDoc(jsonConfig);
+                    senhaHash = (cfg && cfg.senhaHash) ? cfg.senhaHash : '';
+                }
+
+                window._senhaHashEsperado = senhaHash;
+
+                // 3. Se há senha → mostra gate; senão → mostra direto
+                if (senhaHash) {
+                    showGate(() => renderChamado({ id: jsonChamado.name?.split('/').pop(), ...r }));
+                } else {
+                    renderChamado({ id: jsonChamado.name?.split('/').pop(), ...r });
+                }
+
+            } catch(e) {
+                console.error(e);
+                showError('Erro ao carregar', 'Verifique sua conexão e tente novamente.');
+            }
+        })();
+
+        window._verificarSenha = _verificarSenha;
+    </script>
+</body>
+</html>

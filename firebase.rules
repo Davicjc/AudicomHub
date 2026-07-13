@@ -408,12 +408,36 @@ service cloud.firestore {
     //   projetos/sistema-chamados p/ poder negar update/delete).
     //   Cria quem tem o projeto (e só como si mesmo); NINGUÉM edita ou
     //   apaga — nem admin. Clientes de ronda (sem o projeto) não leem.
+    //   Link público: docs com publico:true são legíveis por ID direto
+    //   (get), mas a coleção inteira (list) continua protegida.
     // ================================================================
-    match /chamados-historico/{id} {
-      allow read:   if temProjeto('sistema-chamados');
-      allow create: if temProjeto('sistema-chamados')
-                    && request.resource.data.criadoPorUid == request.auth.uid;
+    match /chamados-historico/{docId} {
+      // Leitura irrestrita para permitir que o link público funcione via REST
+      allow get: if true;
+      allow list: if request.auth != null && temProjeto('sistema-chamados');
+      allow create: if request.auth != null && temProjeto('sistema-chamados');
+      // Historico é imutável: update/delete não são permitidos
       allow update, delete: if false;
+
+      // Subcoleção de comentários do chamado (usado no link público)
+      match /comentarios/{commentId} {
+        // Leitura livre para exibir no link público (que não exige autenticação)
+        allow read: if true;
+        // Apenas membros ativos podem adicionar novos comentários (via SDK de Auth)
+        allow create: if isMembroAtivo();
+        // Comentários não podem ser editados ou apagados (auditoria)
+        allow update, delete: if false;
+      }
+    }
+
+    // ================================================================
+    // PUBLICO-CONFIG — configurações legíveis publicamente (sem auth).
+    //   Contém apenas dados não sensíveis como hash de senha pública.
+    //   Escrita exclusiva de admin.
+    // ================================================================
+    match /publico-config/{doc} {
+      allow read:  if true;
+      allow write: if isAdmin();
     }
 
     // ================================================================

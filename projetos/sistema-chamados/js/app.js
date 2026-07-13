@@ -436,33 +436,50 @@ ${entrada}
     async atualizarResumo() {
         const dados = this.getFormData();
         const copiarBtn = document.getElementById('copiarResumoBtn');
-        
-        // Verificar se os campos essenciais estão preenchidos
-        if (dados.codigo && dados.cliente && dados.localCliente && dados.falha && dados.protocolo) {
-            // Gerar resumo via IA
-            this.resumoContent.innerHTML = '<p class="placeholder"><i class="fas fa-spinner fa-spin"></i> Gerando resumo via IA...</p>';
-            copiarBtn.disabled = true;
-            
-            const resumo = await this.gerarResumoViaIA(dados);
-            
-            if (resumo) {
-                this.resumoContent.textContent = resumo;
-                this.resumoContent.classList.add('generated');
-                this.resumoContent.classList.remove('placeholder');
-                copiarBtn.disabled = false;
-            } else {
-                // Fallback para resumo simples
-                const resumoSimples = `(${dados.codigo}) ${dados.cliente} - ${dados.localCliente} ▪️ ${dados.falha} ▪️ ${dados.telefone} ▪️ ${dados.protocolo}`;
-                this.resumoContent.textContent = resumoSimples;
-                this.resumoContent.classList.add('generated');
-                copiarBtn.disabled = false;
-            }
-        } else {
+
+        // Campos mínimos para gerar resumo
+        if (!dados.codigo && !dados.cliente && !dados.falha) {
             this.resumoContent.innerHTML = '<p class="placeholder">Preencha os dados acima para gerar o resumo automaticamente</p>';
             this.resumoContent.classList.remove('generated');
-            copiarBtn.disabled = true;
+            if (copiarBtn) copiarBtn.disabled = true;
+            return;
         }
+
+        // Mostra spinner e bloqueia avanço
+        this.resumoContent.innerHTML = '<p class="placeholder"><i class="fas fa-spinner fa-spin"></i> Gerando resumo via IA...</p>';
+        if (copiarBtn) copiarBtn.disabled = true;
+
+        let resumo = null;
+        try {
+            resumo = await this.gerarResumoViaIA(dados);
+        } catch (e) {
+            console.warn('IA falhou, usando fallback local:', e);
+        }
+
+        if (resumo) {
+            this.resumoContent.textContent = resumo;
+            this.resumoContent.classList.add('generated');
+            this.resumoContent.classList.remove('placeholder');
+        } else {
+            // Fallback local — monta resumo com os dados disponíveis
+            const partes = [];
+            if (dados.codigo && dados.cliente) partes.push(`(${dados.codigo}) ${dados.cliente}`);
+            else if (dados.cliente)            partes.push(dados.cliente);
+            if (dados.localCliente)            partes.push(dados.localCliente);
+            if (dados.falha) {
+                // Só a primeira linha da falha (sem bloco HubSoft)
+                const falhaCurta = dados.falha.split('DADOS HUBSOFT')[0].split('\n')[0].trim();
+                if (falhaCurta) partes.push(falhaCurta);
+            }
+            if (dados.telefone)    partes.push(dados.telefone);
+            if (dados.protocolo)   partes.push('Protocolo: ' + dados.protocolo);
+            this.resumoContent.textContent = partes.join(' ▪️ ');
+            this.resumoContent.classList.add('generated');
+        }
+
+        if (copiarBtn) copiarBtn.disabled = false;
     }
+
 
     limparFormulario() {
         // Salvar dados atuais antes de limpar

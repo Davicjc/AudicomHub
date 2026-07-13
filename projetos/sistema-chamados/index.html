@@ -108,7 +108,7 @@
                             <div class="cw-code-row">
                                 <div class="cw-code-field">
                                     <i class="fas fa-hashtag"></i>
-                                    <input type="text" id="codigoBusca" inputmode="numeric" autocomplete="off" placeholder="código do cliente (ex.: 4194)"
+                                    <input type="text" id="codigoBusca" inputmode="numeric" autocomplete="off" placeholder="código do cliente (ex.: 6315)"
                                         onkeydown="if(event.key==='Enter'){event.preventDefault();chamadoWizard.consultarApi();}">
                                 </div>
                                 <button type="button" id="hs-buscar-btn" class="cw-consultar" style="display:none" onclick="chamadoWizard.consultarApi()">
@@ -276,8 +276,8 @@ Status: Serviço Habilitado
                                 <h3 class="cw-title">Resultado final</h3>
                             </div>
                             <div class="cw-head-actions">
-                                <button type="button" class="cw-mini" onclick="chamadoWizard.copiarResultado('chamado')"><i class="fas fa-copy"></i> Só chamado</button>
-                                <button type="button" class="cw-mini" onclick="chamadoWizard.copiarResultado('resumo')"><i class="fas fa-copy"></i> Só resumo</button>
+                                <button type="button" id="cwBtnChamado" class="cw-mini" onclick="chamadoWizard.copiarResultado('chamado')"><i class="fas fa-copy"></i> Só chamado</button>
+                                <button type="button" id="cwBtnResumo"  class="cw-mini" onclick="chamadoWizard.copiarResultado('resumo')"><i class="fas fa-copy"></i> Só resumo</button>
                                 <button type="button" class="cw-mini" onclick="chamadoWizard.novoChamado()"><i class="fas fa-plus"></i> Novo</button>
                             </div>
                         </div>
@@ -353,6 +353,8 @@ Status: Serviço Habilitado
                     </div>
                     <span class="hist-count" id="histCount"></span>
                     <button type="button" class="cw-mini" onclick="carregarHistorico(true)"><i class="fas fa-rotate"></i> Atualizar</button>
+                    <button type="button" class="cw-mini" id="btnSenhaLink" style="display:none" onclick="_histAbrirSenhaModal()"><i class="fas fa-key"></i> Senha do link</button>
+                    <button type="button" class="cw-mini" id="btnDicaLink" style="display:none" onclick="_histAbrirDicaModal()"><i class="fas fa-lightbulb"></i> Dica do link</button>
                 </div>
 
                 <div id="histLista" class="hist-lista">
@@ -432,6 +434,53 @@ Status: Serviço Habilitado
         <div id="toast" class="toast">
             <i class="fas fa-check-circle"></i>
             <span id="toastMessage">Copiado!</span>
+        </div>
+
+        <!-- Modal: Senha do link público -->
+        <div id="senhaLinkModal" class="modal">
+            <div class="modal-content" style="max-width:420px">
+                <div class="modal-header">
+                    <h3><i class="fas fa-key"></i> Senha do link público</h3>
+                    <span class="close" id="closeSenhaModal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <p style="color:var(--text-muted);font-size:0.83rem;margin-bottom:16px">Defina a senha que será exigida para visualizar qualquer link público de chamado. Deixe em branco para remover a proteção por senha.</p>
+                    <div class="form-group" style="margin-bottom:12px">
+                        <label for="senhaLinkInput" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:6px"><i class="fas fa-lock"></i> Nova senha</label>
+                        <input type="password" id="senhaLinkInput" placeholder="Digite a senha…" autocomplete="new-password" style="width:100%">
+                    </div>
+                    <div class="form-group">
+                        <label for="senhaLinkConfirm" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-bottom:6px"><i class="fas fa-lock"></i> Confirmar senha</label>
+                        <input type="password" id="senhaLinkConfirm" placeholder="Confirme a senha…" autocomplete="new-password" style="width:100%">
+                    </div>
+                    <p id="senhaLinkStatus" style="font-size:0.8rem;margin-top:10px;min-height:18px"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="cancelarSenhaBtn"><i class="fas fa-times"></i> Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="salvarSenhaBtn" onclick="_histSalvarSenha()"><i class="fas fa-save"></i> Salvar senha</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Dica do link -->
+        <div id="dicaLinkModal" class="modal">
+            <div class="modal-content" style="max-width:420px">
+                <div class="modal-header">
+                    <h3><i class="fas fa-lightbulb"></i> Dica do link</h3>
+                    <span class="close" id="closeDicaModal">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <p style="color:var(--text-muted);font-size:0.83rem;margin-bottom:16px">Defina uma dica ou instrução que será colada automaticamente logo abaixo do link público ao copiar qualquer chamado. Deixe em branco para remover.</p>
+                    <div class="form-group" style="margin-bottom:12px">
+                        <textarea id="dicaLinkInput" placeholder="Ex: Acesse o link acima com a senha padrão da empresa." style="width:100%; min-height:80px; padding:10px; font-family:inherit; resize:vertical; border:1px solid rgba(255,255,255,0.1); border-radius:6px; background:rgba(0,0,0,0.2); color:#fff;"></textarea>
+                    </div>
+                    <p id="dicaLinkStatus" style="font-size:0.8rem;margin-top:10px;min-height:18px"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" id="cancelarDicaBtn"><i class="fas fa-times"></i> Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="salvarDicaBtn" onclick="_histSalvarDica()"><i class="fas fa-save"></i> Salvar dica</button>
+                </div>
+            </div>
         </div>
     
     <script src="js/app.js"></script>
@@ -547,6 +596,11 @@ Status: Serviço Habilitado
             window._can          = (typeof resolverPermissoes === 'function')
                 ? resolverPermissoes(userData, 'sistema-chamados')
                 : {};
+
+            // Botão de senha do link público: só admin
+            if (window._isAdmin && typeof _histMostrarBotaoSenha === 'function') {
+                _histMostrarBotaoSenha();
+            }
 
             // Etapa 1: quem tem permissão vê "Buscar por código"; senão, só "Colar dados"
             if (window._can.hubsoftConsultar) {

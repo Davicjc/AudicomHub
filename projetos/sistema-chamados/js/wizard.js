@@ -33,6 +33,8 @@ const chamadoWizard = {
 
     async proximo() {
         const nome = this.steps[this.atual];
+        const toast = (m, t) => { if (window.sistemaChamados && sistemaChamados.mostrarToast) sistemaChamados.mostrarToast(m, t); };
+
         if (nome === 'james') {
             const hs = (document.getElementById('hubsoftData').value || '').trim();
             const jm = (document.getElementById('jamesData').value || '').trim();
@@ -41,12 +43,25 @@ const chamadoWizard = {
             return;
         }
         if (nome === 'dados') {
+            const vazios = this._validarDados();
+            if (vazios.length) {
+                toast('Preencha os campos obrigatórios: ' + vazios.map(c => c.lbl).join(', '), 'error');
+                // Foca o primeiro campo vazio
+                const primeiro = document.getElementById(vazios[0].id);
+                if (primeiro) primeiro.focus();
+                return;
+            }
             if (window.sistemaChamados && sistemaChamados.atualizarResumo) sistemaChamados.atualizarResumo();
             this.ir('resumo');
             return;
         }
         if (nome === 'resumo') {
-            this.ir('resultado'); // monta o resultado final e registra no histórico
+            const copiarBtn = document.getElementById('copiarResumoBtn');
+            if (copiarBtn && copiarBtn.disabled) {
+                toast('Aguarde o resumo terminar de gerar…', 'info');
+                return;
+            }
+            this.ir('resultado');
             return;
         }
         if (nome === 'resultado') {
@@ -76,15 +91,32 @@ const chamadoWizard = {
     },
 
     copiarResultado(qual) {
+        const toast = (m, t) => { if (window.sistemaChamados && sistemaChamados.mostrarToast) sistemaChamados.mostrarToast(m, t); };
         const chamado = (window.sistemaChamados && sistemaChamados.gerarChamadoCompleto)
             ? sistemaChamados.gerarChamadoCompleto() : '';
         const resumo = (document.getElementById('resumoContent') && document.getElementById('resumoContent').textContent || '').trim();
         const resumoOk = resumo && !/Preencha|Clique em|Gerando/.test(resumo);
+
         let txt;
-        if (qual === 'chamado') txt = chamado;
-        else if (qual === 'resumo') txt = resumoOk ? resumo : '';
-        else txt = this._montarResultado();
-        const toast = (m, t) => { if (window.sistemaChamados && sistemaChamados.mostrarToast) sistemaChamados.mostrarToast(m, t); };
+        if (qual === 'resumo') {
+            // Resumo: nunca inclui link
+            txt = resumoOk ? resumo : '';
+        } else {
+            // Chamado / tudo: como o docId é gerado sincronamente, já está disponível
+            const docId = window._histDocAtual;
+            let link = (docId && typeof window._histLinkPublico === 'function')
+                ? '\n\n🔗 Tratativa: ' + window._histLinkPublico(docId)
+                : '';
+            
+            if (link && window._dicaLinkPublico) {
+                link += '\n💡 Dica: ' + window._dicaLinkPublico;
+            }
+
+            txt = qual === 'chamado'
+                ? chamado + link
+                : this._montarResultado() + link;
+        }
+
         if (!txt) { toast('Nada para copiar ainda.', 'error'); return; }
         navigator.clipboard.writeText(txt).then(
             () => toast(qual === 'resumo' ? 'Resumo copiado!' : (qual === 'chamado' ? 'Chamado copiado!' : 'Resultado copiado!'), 'success'),
@@ -94,10 +126,38 @@ const chamadoWizard = {
 
     novoChamado() {
         const b = document.getElementById('limparBtn');
-        if (b) b.click(); // limpa o formulário (lógica do app.js)
+        if (b) b.click();
         ['hubsoftData', 'jamesData', 'codigoBusca'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
         if (typeof novoChamadoHistorico === 'function') novoChamadoHistorico();
         this.ir('hubsoft');
+    },
+
+    // Valida os campos obrigatórios da etapa Dados.
+    // Marca com .field-error e retorna array de {id, lbl} vazios.
+    _validarDados() {
+        const campos = [
+            { id: 'codigo',       lbl: 'Código'     },
+            { id: 'cliente',      lbl: 'Cliente'     },
+            { id: 'telefone',     lbl: 'Telefone'    },
+            { id: 'falha',        lbl: 'Falha'       },
+            { id: 'localCliente', lbl: 'Local'       },
+            { id: 'protocolo',    lbl: 'Protocolo'   },
+        ];
+        const vazios = [];
+        campos.forEach(c => {
+            const el = document.getElementById(c.id);
+            if (!el) return;
+            const ok = el.value.trim().length > 0;
+            if (ok) {
+                el.classList.remove('field-error');
+            } else {
+                el.classList.add('field-error');
+                // Remove o erro ao começar a digitar
+                el.addEventListener('input', () => el.classList.remove('field-error'), { once: true });
+                vazios.push(c);
+            }
+        });
+        return vazios;
     },
 
     async _processarIA() {

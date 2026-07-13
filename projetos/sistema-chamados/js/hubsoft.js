@@ -382,6 +382,20 @@ const hsWizard = {
     },
 
     aplicar() {
+        // Limpa TODOS os campos antes de aplicar o novo cliente — evita mistura
+        const camposForm = ['codigo','cliente','ponto','falha','telefone',
+                            'disponibilidade','responsavel','localCliente',
+                            'protocolo','protocoloJames','instrucao'];
+        camposForm.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) { el.value = ''; el.classList.remove('field-error', 'field-popped'); }
+        });
+        // Limpa também o textarea do James e reseta o registro do histórico
+        const jamesEl = document.getElementById('jamesData');
+        if (jamesEl) jamesEl.value = '';
+        if (typeof novoChamadoHistorico === 'function') novoChamadoHistorico();
+
+        // Aplica os campos do HubSoft selecionados
         const marcadoBloco = [];
         let cpesLista = null, nCampos = 0;
         this.campos.forEach(c => {
