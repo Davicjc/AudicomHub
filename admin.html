@@ -321,6 +321,56 @@
           </div>
         </div>
 
+        <!-- Card: Integração HubSoft -->
+        <div class="glass" style="padding:24px">
+          <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:6px">
+            <div style="font-size:20px">🔌</div>
+            <div>
+              <h3 style="margin:0 0 6px;font-size:15px;font-weight:600;color:var(--text)">Integração HubSoft</h3>
+              <p class="text-muted text-sm" style="margin:0">Credenciais da API HubSoft usadas na consulta de cliente no Sistema de Chamados. <strong>Dados sensíveis</strong> — guardados fora de <code>config/</code>; só quem tem a permissão <em>Consultar HubSoft</em> consegue lê-los.</p>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;max-width:560px">
+            <div class="form-group">
+              <label>URL base da API</label>
+              <input type="text" id="hs-url" class="input" placeholder="https://api.seudominio.com.br">
+            </div>
+            <div class="form-group">
+              <label>Client ID</label>
+              <input type="text" id="hs-client-id" class="input" placeholder="ex: 89">
+            </div>
+            <div class="form-group">
+              <label>Client Secret</label>
+              <div class="config-value-wrap">
+                <input type="password" id="hs-client-secret" class="input config-value" placeholder="••••••••" autocomplete="off">
+                <button type="button" class="config-eye" onclick="toggleEye('hs-client-secret', null)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Usuário da API</label>
+              <input type="text" id="hs-username" class="input" placeholder="api@suaempresa.com" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label>Senha da API</label>
+              <div class="config-value-wrap">
+                <input type="password" id="hs-password" class="input config-value" placeholder="••••••••" autocomplete="new-password">
+                <button type="button" class="config-eye" onclick="toggleEye('hs-password', null)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px">
+              <button class="btn btn-primary btn-sm" onclick="salvarConfigHubsoft()">Salvar credenciais</button>
+              <button class="btn btn-ghost btn-sm" onclick="testarHubsoft()">Testar conexão</button>
+              <span id="hs-status" class="text-sm" style="min-height:16px"></span>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -564,6 +614,7 @@
       await carregarCategorias();
       carregarUsuarios();
       carregarConfig();
+      carregarConfigHubsoft();
     });
 
     async function autoSeed() {
@@ -628,6 +679,7 @@
       apagarPermanente: { label: 'Apagar permanente',cor: '#ef4444', icon: 'fa-skull' },
       migrar:           { label: 'Migrar p/ nuvem',  cor: '#14b8a6', icon: 'fa-cloud-arrow-up' },
       painelAdm:        { label: 'Painel admin',     cor: '#fbbf24', icon: 'fa-crown' },
+      hubsoftConsultar: { label: 'Consultar HubSoft', cor: '#0ea5e9', icon: 'fa-magnifying-glass' },
     };
 
     // Monta a árvore "projeto → permissões liberadas" para um usuário comum
@@ -1143,6 +1195,103 @@
       db.collection('config').doc(id).delete()
         .then(() => { showToast('Removido.', 'success'); carregarConfig(); })
         .catch(err => showToast('Erro: ' + err.message, 'error'));
+    }
+
+    /* ─── INTEGRAÇÃO HUBSOFT (credenciais sensíveis, coleção própria) ─── */
+    async function carregarConfigHubsoft() {
+      try {
+        const snap = await db.collection('hubsoft').doc('credenciais').get();
+        const c = snap.exists ? snap.data() : {};
+        document.getElementById('hs-url').value           = c.url || '';
+        document.getElementById('hs-client-id').value     = c.client_id || '';
+        document.getElementById('hs-client-secret').value = c.client_secret || '';
+        document.getElementById('hs-username').value      = c.username || '';
+        document.getElementById('hs-password').value      = c.password || '';
+      } catch (err) {
+        console.warn('Não foi possível ler credenciais HubSoft:', err.message);
+      }
+    }
+
+    async function salvarConfigHubsoft() {
+      const cfg = {
+        url:           document.getElementById('hs-url').value.trim().replace(/\/$/, ''),
+        client_id:     document.getElementById('hs-client-id').value.trim(),
+        client_secret: document.getElementById('hs-client-secret').value.trim(),
+        username:      document.getElementById('hs-username').value.trim(),
+        password:      document.getElementById('hs-password').value
+      };
+      if (!cfg.url || !cfg.client_id || !cfg.client_secret || !cfg.username || !cfg.password) {
+        showToast('Preencha todos os 5 campos da API HubSoft.', 'error');
+        return;
+      }
+      try {
+        await db.collection('hubsoft').doc('credenciais').set(cfg);
+        document.getElementById('hs-url').value = cfg.url; // reflete normalização
+        showToast('Credenciais HubSoft salvas.', 'success');
+      } catch (err) {
+        showToast('Erro ao salvar: ' + err.message, 'error');
+      }
+    }
+
+    // OAuth 2.0 (grant password) com fallback de 3 Content-Types — apenas p/ o "Testar conexão".
+    async function _hsTokenAdmin(cfg) {
+      const raw = JSON.stringify({
+        client_id: cfg.client_id, client_secret: cfg.client_secret,
+        username: cfg.username, password: cfg.password, grant_type: 'password'
+      });
+      const falhou = r => (r.status === 401 || r.status === 400 || r.status === 415);
+
+      let r = await fetch(cfg.url + '/oauth/token', { method: 'POST', body: raw, redirect: 'follow' });
+      if (falhou(r)) {
+        r = await fetch(cfg.url + '/oauth/token', {
+          method: 'POST', body: raw, redirect: 'follow',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      if (falhou(r)) {
+        r = await fetch(cfg.url + '/oauth/token', {
+          method: 'POST', redirect: 'follow',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: cfg.client_id, client_secret: cfg.client_secret,
+            username: cfg.username, password: cfg.password, grant_type: 'password'
+          })
+        });
+      }
+      if (!r.ok) {
+        let msg = 'HTTP ' + r.status;
+        try { const e = await r.json(); msg = e.msg || e.message || e.error || msg; } catch (_) {}
+        throw new Error(msg);
+      }
+      const d = await r.json();
+      if (!d.access_token) throw new Error(d.msg || d.message || d.error || 'Token não retornado pela API');
+      return d.access_token;
+    }
+
+    async function testarHubsoft() {
+      const status = document.getElementById('hs-status');
+      const cfg = {
+        url:           document.getElementById('hs-url').value.trim().replace(/\/$/, ''),
+        client_id:     document.getElementById('hs-client-id').value.trim(),
+        client_secret: document.getElementById('hs-client-secret').value.trim(),
+        username:      document.getElementById('hs-username').value.trim(),
+        password:      document.getElementById('hs-password').value
+      };
+      if (!cfg.url || !cfg.client_id || !cfg.client_secret || !cfg.username || !cfg.password) {
+        status.textContent = 'Preencha os 5 campos antes de testar.';
+        status.style.color = '#ef4444';
+        return;
+      }
+      status.textContent = 'Testando…';
+      status.style.color = 'var(--muted)';
+      try {
+        await _hsTokenAdmin(cfg);
+        status.textContent = '✓ Conexão OK — token obtido.';
+        status.style.color = '#10b981';
+      } catch (err) {
+        status.textContent = '✗ Falhou: ' + err.message;
+        status.style.color = '#ef4444';
+      }
     }
 
     /* ═══════════════════════════════════════════════

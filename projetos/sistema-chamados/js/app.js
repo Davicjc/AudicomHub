@@ -887,16 +887,43 @@ RETORNE EXATAMENTE este JSON:
         const camposPreenchidos = [];
         const camposFaltando = [];
 
+        const MARCADOR_HS = 'DADOS HUBSOFT ────>';
+        const popAnim = (el) => { el.classList.remove('field-popped'); void el.offsetWidth; el.classList.add('field-popped'); };
+
         Object.entries(mapeamento).forEach(([chave, idCampo]) => {
             const el = document.getElementById(idCampo);
             if (!el) return;
             const valor = dados[chave] || '';
-            if (valor) {
+
+            // FALHA: pode conter o bloco "DADOS HUBSOFT ────>" (extras da API).
+            // A falha extraída entra ACIMA do bloco, sem sobrescrevê-lo.
+            if (chave === 'falha') {
+                const txt = el.value || '';
+                const pos = txt.indexOf(MARCADOR_HS);
+                const topo = (pos !== -1 ? txt.slice(0, pos) : txt).trim();
+                if (valor && !topo) {
+                    el.value = (pos !== -1) ? `${valor}\n\n${txt.slice(pos)}` : valor;
+                    popAnim(el);
+                    camposPreenchidos.push(chave);
+                } else if (topo) {
+                    camposPreenchidos.push(chave); // falha já preenchida (preservada)
+                } else {
+                    camposFaltando.push(chave);
+                }
+                return;
+            }
+
+            const jaPreenchido = !!(el.value && el.value.trim());
+            if (valor && !jaPreenchido) {
+                // só preenche campos VAZIOS — a IA complementa (não sobrescreve
+                // o que já veio do HubSoft ou o que o atendente digitou)
                 el.value = valor;
                 el.classList.remove('field-popped');
                 void el.offsetWidth;
                 el.classList.add('field-popped');
                 camposPreenchidos.push(chave);
+            } else if (jaPreenchido) {
+                camposPreenchidos.push(chave); // preservado (ex.: dado do HubSoft)
             } else {
                 camposFaltando.push(chave);
             }

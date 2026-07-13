@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="../../shared/mobile-sidebar.css">
     <link rel="stylesheet" href="../../shared/app-preferences.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
@@ -16,6 +16,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
     <script src="../../shared/firebase-init.js"></script>
     <script src="../../shared/auth-guard.js"></script>
+    <script src="../../shared/permissions.js"></script>
     <script src="../../shared/mobile-sidebar.js"></script>
     <script src="../../shared/app-preferences.js"></script>
 </head>
@@ -49,6 +50,13 @@
                         <span>Script para Cliente</span>
                     </button>
                 </div>
+
+                <div class="tab-wrapper">
+                    <button class="tab-btn" onclick="showSection('historico-tab'); selectTab(this); carregarHistorico()">
+                        <div class="nav-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                        <span>Histórico</span>
+                    </button>
+                </div>
             </nav>
 
             <div class="sidebar-footer">
@@ -65,55 +73,85 @@
         <main class="content-area" id="mainContent">
             
             <div id="dashboard-tab" class="screen active" style="display:block;">
-                
-            <div class="tutorial-header">
-                <div class="tutorial-header-top">
-                    <div class="tut-icon"><i class="fas fa-headset"></i></div>
-                    <div class="tut-title-block">
-                        <h2>Sistema de Chamados</h2>
-                        <p>Gerador de scripts para chamados técnicos</p>
+              <div class="cw">
+
+                <!-- Topo: marca + stepper -->
+                <div class="cw-top">
+                    <div class="cw-brand">
+                        <div class="cw-brand-ic"><i class="fas fa-headset"></i></div>
+                        <div class="cw-brand-tx">
+                            <strong>Abrir chamado</strong>
+                            <span>fluxo guiado · 4 etapas</span>
+                        </div>
                     </div>
+                    <div class="cw-stepper" id="cw-stepper"></div>
                 </div>
-            </div>
 
-                <section class="auto-mode-section">
-            <div class="auto-mode-card">
-                <h2><i class="fas fa-robot"></i> Abertura Automática <span class="ai-badge">IA</span></h2>
-                <p class="auto-mode-desc">Cole os dados do HUBSOFT e/ou JAMES. A Audinha IA extrai e preenche tudo automaticamente.</p>
+                <!-- Corpo: uma etapa por vez -->
+                <div class="cw-body">
 
-                <div class="auto-inputs-grid">
-                    <div class="input-col">
-                        <button type="button" class="btn-how-to" data-img="assets/Hubsoft.png" data-caption="Pressione CTRL+A dentro da página do cliente no HUBSOFT para selecionar tudo, depois CTRL+C e cole aqui.">
-                            <i class="fas fa-circle-question"></i> Como copiar do HUBSOFT?
-                        </button>
-                        <div class="input-panel">
-                            <div class="panel-header hubsoft-header">
-                                <i class="fas fa-database"></i>
-                                <span>HUBSOFT</span>
-                                <span class="tag-optional">opcional</span>
-                                <button type="button" class="btn-clear-input" data-target="hubsoftData" title="Limpar"><i class="fas fa-times"></i></button>
+                    <!-- ETAPA 1 · HUBSOFT -->
+                    <section class="cw-pane active" data-step="hubsoft">
+                        <div class="cw-head">
+                            <div class="cw-eyebrow">etapa 01 · hubsoft</div>
+                            <h3 class="cw-title">Dados do HUBSOFT</h3>
+                            <p class="cw-sub">Consulte pelo código na API (preenche sozinho) ou cole os dados do cliente.</p>
+                        </div>
+
+                        <div class="cw-seg" id="cw-hs-seg">
+                            <button type="button" class="cw-seg-btn active" data-mode="buscar" onclick="chamadoWizard.hsModo('buscar')"><i class="fas fa-magnifying-glass"></i> Buscar por código</button>
+                            <button type="button" class="cw-seg-btn" data-mode="colar" onclick="chamadoWizard.hsModo('colar')"><i class="fas fa-paste"></i> Colar dados</button>
+                        </div>
+
+                        <!-- modo: buscar na API -->
+                        <div id="cw-hs-buscar" class="cw-hs-buscar">
+                            <div class="cw-code-row">
+                                <div class="cw-code-field">
+                                    <i class="fas fa-hashtag"></i>
+                                    <input type="text" id="codigoBusca" inputmode="numeric" autocomplete="off" placeholder="código do cliente (ex.: 4194)"
+                                        onkeydown="if(event.key==='Enter'){event.preventDefault();chamadoWizard.consultarApi();}">
+                                </div>
+                                <button type="button" id="hs-buscar-btn" class="cw-consultar" style="display:none" onclick="chamadoWizard.consultarApi()">
+                                    <i class="fas fa-satellite-dish"></i> Consultar
+                                </button>
                             </div>
-                            <textarea id="hubsoftData" rows="10" placeholder="Cole aqui os dados do cliente extraídos do HUBSOFT...
+                            <p class="cw-hint" id="cw-hs-hint"><i class="fas fa-lock"></i> Consulta somente leitura. Requer a permissão “Consultar HubSoft”.</p>
+                        </div>
+
+                        <!-- modo: colar (Audinha IA) -->
+                        <div id="cw-hs-colar" class="cw-hs-colar" style="display:none">
+                            <div class="input-panel">
+                                <div class="panel-header hubsoft-header">
+                                    <i class="fas fa-database"></i>
+                                    <span>HUBSOFT</span>
+                                    <button type="button" class="btn-how-to" data-img="assets/Hubsoft.png" data-caption="Pressione CTRL+A dentro da página do cliente no HUBSOFT para selecionar tudo, depois CTRL+C e cole aqui." title="Como copiar?"><i class="fas fa-circle-question"></i></button>
+                                    <button type="button" class="btn-clear-input" data-target="hubsoftData" title="Limpar"><i class="fas fa-times"></i></button>
+                                </div>
+                                <textarea id="hubsoftData" rows="8" placeholder="Cole aqui os dados do cliente extraídos do HUBSOFT...
 
 Exemplo:
 (4194) JULIANO RODRIGUES RIZZA
 (0) 65_ 100MB FIBRA URBANO
 INSTALAÇÃO: Rua X, 123..."></textarea>
+                            </div>
                         </div>
-                    </div>
+                    </section>
 
-                    <div class="input-col">
-                        <button type="button" class="btn-how-to james-how-to" data-img="assets/James.png" data-caption="Copie desde o status 'Pendente' lá em cima até o horário da última mensagem do chat, depois cole aqui.">
-                            <i class="fas fa-circle-question"></i> Como copiar do JAMES?
-                        </button>
+                    <!-- ETAPA 2 · JAMES -->
+                    <section class="cw-pane" data-step="james">
+                        <div class="cw-head">
+                            <div class="cw-eyebrow">etapa 02 · james</div>
+                            <h3 class="cw-title">Chat do JAMES</h3>
+                            <p class="cw-sub">Cole o atendimento do JAMES. A Audinha IA extrai a falha, contato e disponibilidade ao avançar. Opcional.</p>
+                        </div>
                         <div class="input-panel">
                             <div class="panel-header james-header">
                                 <i class="fas fa-comments"></i>
                                 <span>JAMES</span>
-                                <span class="tag-optional">opcional</span>
+                                <button type="button" class="btn-how-to james-how-to" data-img="assets/James.png" data-caption="Copie desde o status 'Pendente' lá em cima até o horário da última mensagem do chat, depois cole aqui." title="Como copiar?"><i class="fas fa-circle-question"></i></button>
                                 <button type="button" class="btn-clear-input" data-target="jamesData" title="Limpar"><i class="fas fa-times"></i></button>
                             </div>
-                            <textarea id="jamesData" rows="10" placeholder="Cole aqui o chat/protocolo do JAMES...
+                            <textarea id="jamesData" rows="9" placeholder="Cole aqui o chat/protocolo do JAMES...
 
 Exemplo:
 Nº protocolo: 90327
@@ -122,106 +160,145 @@ Telefone: 553498380212
 Status: Serviço Habilitado
 [chat do atendimento...]"></textarea>
                         </div>
-                    </div>
+                        <button type="button" id="processarIABtn" class="cw-hidden"></button>
+                    </section>
+
+                    <!-- ETAPA 3 · DADOS -->
+                    <section class="cw-pane" data-step="dados">
+                        <div class="cw-head cw-head-row">
+                            <div>
+                                <div class="cw-eyebrow">etapa 03 · dados</div>
+                                <h3 class="cw-title">Dados do chamado</h3>
+                            </div>
+                            <div class="cw-head-actions">
+                                <button type="button" id="corrigirCamposBtn" class="cw-mini"><i class="fas fa-wand-magic-sparkles"></i> Corrigir com IA</button>
+                                <button type="button" id="limparBtn" class="cw-mini"><i class="fas fa-broom"></i> Limpar</button>
+                            </div>
+                        </div>
+
+                        <div id="extractionStatus" class="extraction-status" style="display:none">
+                            <div class="extraction-title"><i class="fas fa-check-double"></i> Dados extraídos:</div>
+                            <div class="extraction-items" id="extractionItems"></div>
+                        </div>
+
+                        <form id="chamadoForm" class="chamado-form cw-grid">
+                            <div class="form-group">
+                                <label for="codigo"><i class="fas fa-code"></i> Código: <span style="color:#ef4444">*</span></label>
+                                <input type="text" id="codigo" name="codigo" placeholder="Código do cliente (1234)">
+                            </div>
+                            <div class="form-group">
+                                <label for="cliente"><i class="fas fa-user"></i> Cliente: <span style="color:#ef4444">*</span></label>
+                                <input type="text" id="cliente" name="cliente" placeholder="Nome do cliente Hubsoft">
+                            </div>
+                            <div class="form-group">
+                                <label for="ponto"><i class="fas fa-wifi"></i> Ponto:</label>
+                                <input type="text" id="ponto" name="ponto" placeholder="Ex: (0) 32_06MB_RURAL_PROMO">
+                            </div>
+                            <div class="form-group">
+                                <label for="telefone"><i class="fas fa-phone"></i> Telefone: <span style="color:#ef4444">*</span></label>
+                                <input type="tel" id="telefone" name="telefone" placeholder="Telefone de contato">
+                            </div>
+                            <div class="form-group cw-col-2">
+                                <label for="falha"><i class="fas fa-exclamation-triangle"></i> Falha: <span style="color:#ef4444">*</span></label>
+                                <textarea id="falha" name="falha" rows="2" placeholder="Descreva o problema relatado pelo cliente"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="disponibilidade"><i class="fas fa-clock"></i> Disponibilidade:</label>
+                                <input type="text" id="disponibilidade" name="disponibilidade" placeholder="Ex: manhã, tarde, 8h às 17h">
+                            </div>
+                            <div class="form-group">
+                                <label for="responsavel"><i class="fas fa-user-check"></i> Quem recebe o técnico:</label>
+                                <input type="text" id="responsavel" name="responsavel" placeholder="Nome do responsável">
+                            </div>
+                            <div class="form-group cw-col-2">
+                                <label for="localCliente"><i class="fas fa-home"></i> Local informado pelo cliente: <span style="color:#ef4444">*</span></label>
+                                <textarea id="localCliente" name="localCliente" rows="2" placeholder="Endereço completo (preferencialmente link)"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="protocolo"><i class="fas fa-file-alt"></i> Protocolo: <span style="color:#ef4444">*</span></label>
+                                <input type="text" id="protocolo" name="protocolo" placeholder="Protocolo Hubsoft">
+                            </div>
+                            <div class="form-group">
+                                <label for="protocoloJames"><i class="fas fa-ticket-alt"></i> Protocolo James:</label>
+                                <input type="text" id="protocoloJames" name="protocoloJames" placeholder="Protocolo James">
+                            </div>
+                            <div class="form-group cw-col-2">
+                                <label for="instrucao"><i class="fas fa-clipboard"></i> Instrução:</label>
+                                <textarea id="instrucao" name="instrucao" rows="2" placeholder="Ex: 'Comprar poste', 'Cuidado cachorro bravo'"></textarea>
+                            </div>
+                        </form>
+                    </section>
+
+                    <!-- ETAPA 4 · RESUMO -->
+                    <section class="cw-pane" data-step="resumo">
+                        <div class="cw-head">
+                            <div class="cw-eyebrow">etapa 04 · resumo</div>
+                            <h3 class="cw-title">Resumo e cópia</h3>
+                            <p class="cw-sub">Confira o resumo de agenda e finalize copiando o chamado.</p>
+                        </div>
+
+                        <div class="resumo-card cw-card">
+                            <div class="resumo-head">
+                                <h4><i class="fas fa-calendar-check"></i> Resumo de Agenda</h4>
+                                <span class="resumo-fmt">(Código) Nome ▪️ Local ▪️ Falha ▪️ Telefone ▪️ Protocolo</span>
+                            </div>
+                            <div class="resumo-content" id="resumoContent">
+                                <p class="placeholder">Clique em “Gerar Resumo” para montar o resumo automático.</p>
+                            </div>
+                            <div class="resumo-actions">
+                                <button type="button" id="gerarResumoBtn" class="cw-mini"><i class="fas fa-wand-magic-sparkles"></i> Gerar Resumo</button>
+                                <button type="button" id="copiarResumoBtn" class="cw-mini" disabled><i class="fas fa-copy"></i> Copiar Resumo</button>
+                            </div>
+                        </div>
+
+                        <div class="ultimo-script-card cw-card" id="ultimoScriptSection" style="display:none">
+                            <div class="resumo-head">
+                                <h4><i class="fas fa-history"></i> Último Script <span class="recovery-badge">RECUPERAR</span></h4>
+                            </div>
+                            <div class="ultimo-script-info" id="ultimoScriptInfo">
+                                <p class="script-timestamp" id="scriptTimestamp"></p>
+                            </div>
+                            <div class="ultimo-script-content" id="ultimoScriptContent"></div>
+                            <div class="ultimo-script-actions">
+                                <button type="button" id="recuperarScriptBtn" class="cw-mini"><i class="fas fa-undo"></i> Recuperar</button>
+                                <button type="button" id="copiarUltimoBtn" class="cw-mini"><i class="fas fa-copy"></i> Copiar</button>
+                                <button type="button" id="descartarUltimoBtn" class="cw-mini danger"><i class="fas fa-trash"></i> Descartar</button>
+                            </div>
+                        </div>
+                        <button type="button" id="copiarChamadoBtn" class="cw-hidden"></button>
+                    </section>
+
+                    <!-- ETAPA 5 · RESULTADO FINAL -->
+                    <section class="cw-pane" data-step="resultado">
+                        <div class="cw-head cw-head-row">
+                            <div>
+                                <div class="cw-eyebrow">etapa 05 · resultado</div>
+                                <h3 class="cw-title">Resultado final</h3>
+                            </div>
+                            <div class="cw-head-actions">
+                                <button type="button" class="cw-mini" onclick="chamadoWizard.copiarResultado('chamado')"><i class="fas fa-copy"></i> Só chamado</button>
+                                <button type="button" class="cw-mini" onclick="chamadoWizard.copiarResultado('resumo')"><i class="fas fa-copy"></i> Só resumo</button>
+                                <button type="button" class="cw-mini" onclick="chamadoWizard.novoChamado()"><i class="fas fa-plus"></i> Novo</button>
+                            </div>
+                        </div>
+                        <p class="cw-sub">Texto final pronto (chamado + resumo). Ao chegar aqui o chamado é <strong>registrado no histórico</strong> automaticamente.</p>
+                        <div class="cw-resultado-wrap">
+                            <div class="cw-resultado-bar"><i class="fas fa-file-lines"></i> chamado.txt</div>
+                            <pre id="cwResultado" class="cw-resultado"></pre>
+                        </div>
+                    </section>
+
                 </div>
 
-                <div class="auto-mode-actions">
-                    <button type="button" id="processarIABtn" class="btn btn-ai-process">
-                        <i class="fas fa-wand-magic-sparkles"></i> Processar com Audinha IA
-                    </button>
+                <!-- Rodapé: navegação -->
+                <div class="cw-foot">
+                    <button type="button" class="cw-btn ghost" id="cw-back" onclick="chamadoWizard.voltar()"><i class="fas fa-arrow-left"></i> Voltar</button>
+                    <span class="cw-foot-info" id="cw-foot-info"></span>
+                    <span class="cw-spacer"></span>
+                    <button type="button" class="cw-btn primary" id="cw-next" onclick="chamadoWizard.proximo()">Próximo <i class="fas fa-arrow-right"></i></button>
                 </div>
 
-                <div id="extractionStatus" class="extraction-status" style="display:none">
-                    <div class="extraction-title"><i class="fas fa-check-double"></i> Dados extraídos:</div>
-                    <div class="extraction-items" id="extractionItems"></div>
-                </div>
-            </div>
-        </section>
-                <section class="form-section">
-            <div class="form-card">
-                <h2><i class="fas fa-file-medical"></i> Dados do Chamado</h2>
-                <form id="chamadoForm" class="chamado-form">
-                    <div class="form-group">
-                        <label for="codigo"><i class="fas fa-code"></i> Código: <span style="color:#ef4444">*</span></label>
-                        <input type="text" id="codigo" name="codigo" placeholder="Digite o código do cliente (1234)">
-                    </div>
-                    <div class="form-group">
-                        <label for="cliente"><i class="fas fa-user"></i> Cliente: <span style="color:#ef4444">*</span></label>
-                        <input type="text" id="cliente" name="cliente" placeholder="Nome do cliente Hubsoft">
-                    </div>
-                    <div class="form-group">
-                        <label for="ponto"><i class="fas fa-wifi"></i> Ponto:</label>
-                        <input type="text" id="ponto" name="ponto" placeholder="Ex: (0) 32_06MB_RURAL_PROMO">
-                    </div>
-                    <div class="form-group">
-                        <label for="falha"><i class="fas fa-exclamation-triangle"></i> Falha: <span style="color:#ef4444">*</span></label>
-                        <textarea id="falha" name="falha" rows="3" placeholder="Descreva o problema relatado pelo cliente"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="telefone"><i class="fas fa-phone"></i> Telefone: <span style="color:#ef4444">*</span></label>
-                        <input type="tel" id="telefone" name="telefone" placeholder="Telefone de contato">
-                    </div>
-                    <div class="form-group">
-                        <label for="disponibilidade"><i class="fas fa-clock"></i> Disponibilidade:</label>
-                        <input type="text" id="disponibilidade" name="disponibilidade" placeholder="Ex: manhã, tarde, 8:00 às 17:00">
-                    </div>
-                    <div class="form-group">
-                        <label for="responsavel"><i class="fas fa-user-check"></i> Pessoa que irá receber o técnico:</label>
-                        <input type="text" id="responsavel" name="responsavel" placeholder="Nome da pessoa responsável">
-                    </div>
-                    <div class="form-group">
-                        <label for="localCliente"><i class="fas fa-home"></i> Local informado pelo cliente: <span style="color:#ef4444">*</span></label>
-                        <textarea id="localCliente" name="localCliente" rows="2" placeholder="Endereço completo do cliente (preferencialmente em link)"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label for="protocolo"><i class="fas fa-file-alt"></i> Protocolo: <span style="color:#ef4444">*</span></label>
-                        <input type="text" id="protocolo" name="protocolo" placeholder="Número do protocolo Hubsoft">
-                    </div>
-                    <div class="form-group">
-                        <label for="protocoloJames"><i class="fas fa-ticket-alt"></i> Protocolo James:</label>
-                        <input type="text" id="protocoloJames" name="protocoloJames" placeholder="Número do protocolo James">
-                    </div>
-                    <div class="form-group">
-                        <label for="instrucao"><i class="fas fa-clipboard"></i> Instrução:</label>
-                        <textarea id="instrucao" name="instrucao" rows="2" placeholder="Ex: 'Comprar poste', 'Cuidado cachorro bravo', 'gere sem o telefone'"></textarea>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" id="limparBtn" class="btn btn-secondary"><i class="fas fa-broom"></i> Limpar</button>
-                        <button type="button" id="corrigirCamposBtn" class="btn btn-secondary"><i class="fas fa-wand-magic-sparkles"></i> Corrigir Campos com Audinha IA</button>
-                        <button type="button" id="copiarChamadoBtn" class="btn btn-primary"><i class="fas fa-copy"></i> Copiar Chamado</button>
-                    </div>
-                </form>
-            </div>
-        </section>
-                <section class="resumo-section">
-            <div class="resumo-card">
-                <h2><i class="fas fa-calendar-check"></i> Resumo de Agenda</h2>
-                <p style="text-align:center;color:var(--text-muted);font-size:0.75rem;margin-bottom:15px;margin-top:-10px;">
-                    Formato: (Código) Nome ▪️ Local ▪️ Falha ▪️ Telefone ▪️ Protocolo
-                </p>
-                <div class="resumo-content" id="resumoContent">
-                    <p class="placeholder">Preencha os dados acima e clique em "Gerar Resumo" para criar o resumo automático</p>
-                </div>
-                <div class="resumo-actions">
-                    <button type="button" id="gerarResumoBtn" class="btn btn-secondary"><i class="fas fa-wand-magic-sparkles"></i> Gerar Resumo com Audinha IA</button>
-                    <button type="button" id="copiarResumoBtn" class="btn btn-primary" disabled><i class="fas fa-copy"></i> Copiar Resumo</button>
-                </div>
-            </div>
-        </section>
-                <section class="ultimo-script-section" id="ultimoScriptSection" style="display:none">
-            <div class="ultimo-script-card">
-                <h2><i class="fas fa-history"></i> Último Script <span class="recovery-badge">RECUPERAR</span></h2>
-                <div class="ultimo-script-info" id="ultimoScriptInfo">
-                    <p class="script-timestamp" id="scriptTimestamp"></p>
-                </div>
-                <div class="ultimo-script-content" id="ultimoScriptContent"></div>
-                <div class="ultimo-script-actions">
-                    <button type="button" id="recuperarScriptBtn" class="btn btn-primary"><i class="fas fa-undo"></i> Recuperar Script</button>
-                    <button type="button" id="copiarUltimoBtn" class="btn btn-secondary"><i class="fas fa-copy"></i> Copiar</button>
-                    <button type="button" id="descartarUltimoBtn" class="btn btn-danger"><i class="fas fa-trash"></i> Descartar</button>
-                </div>
-            </div>
-        </section>
+              </div>
             </div>
 
             <div id="script-tab" class="screen" style="display:none;">
@@ -257,6 +334,32 @@ Status: Serviço Habilitado
         </section>
             </div>
 
+            <!-- ══════════ HISTÓRICO ══════════ -->
+            <div id="historico-tab" class="screen" style="display:none;">
+                <div class="tutorial-header">
+                    <div class="tutorial-header-top">
+                        <div class="tut-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                        <div class="tut-title-block">
+                            <h2>Histórico de Chamados</h2>
+                            <p>Todas as aberturas — quem abriu, quando e os dados</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hist-toolbar">
+                    <div class="hist-search">
+                        <i class="fas fa-magnifying-glass"></i>
+                        <input type="text" id="histBusca" placeholder="Buscar por código, cliente, protocolo ou quem abriu…" oninput="_histRender()">
+                    </div>
+                    <span class="hist-count" id="histCount"></span>
+                    <button type="button" class="cw-mini" onclick="carregarHistorico(true)"><i class="fas fa-rotate"></i> Atualizar</button>
+                </div>
+
+                <div id="histLista" class="hist-lista">
+                    <div class="hist-empty">Abra a aba para carregar o histórico.</div>
+                </div>
+            </div>
+
         </main>
     </div>
 
@@ -288,6 +391,26 @@ Status: Serviço Habilitado
         </div>
     </div>
 
+    <!-- ═══ HUBSOFT · Console de consulta (wizard em etapas) ═══ -->
+    <div id="hs-wizard" class="hsw-overlay" aria-hidden="true">
+        <div class="hsw-modal" role="dialog" aria-modal="true" aria-label="Consulta HubSoft">
+            <div class="hsw-header">
+                <div class="hsw-logo"><i class="fas fa-network-wired"></i></div>
+                <div class="hsw-title">
+                    <strong>HubSoft</strong>
+                    <span>consulta de cliente</span>
+                </div>
+                <div class="hsw-conn idle" id="hsw-conn">
+                    <i class="fas fa-circle"></i> <span id="hsw-conn-txt">standby</span>
+                </div>
+                <button class="hsw-x" onclick="hsWizard.fechar()" aria-label="Fechar"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="hsw-stepper" id="hsw-stepper"></div>
+            <div class="hsw-body" id="hsw-body"></div>
+            <div class="hsw-footer" id="hsw-footer"></div>
+        </div>
+    </div>
+
     <!-- Modal de Edição do Script -->
         <div id="editModal" class="modal">
             <div class="modal-content">
@@ -312,6 +435,9 @@ Status: Serviço Habilitado
         </div>
     
     <script src="js/app.js"></script>
+    <script src="js/hubsoft.js"></script>
+    <script src="js/historico.js"></script>
+    <script src="js/wizard.js"></script>
     <script>
         function selectTab(btn) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -413,7 +539,25 @@ Status: Serviço Habilitado
         window.loadGeminiConfig = loadGeminiConfig;
         window.chatAI = chatAI;
 
-        requireAuth('sistema-chamados').then(async () => {
+        requireAuth('sistema-chamados').then(async ({ user, userData }) => {
+            // Globais de sessão (padrão do projeto)
+            window._userEmail    = user.email;
+            window._isAdmin      = userData.role === 'superadmin' || userData.role === 'admin';
+            window._isSuperAdmin = userData.role === 'superadmin';
+            window._can          = (typeof resolverPermissoes === 'function')
+                ? resolverPermissoes(userData, 'sistema-chamados')
+                : {};
+
+            // Etapa 1: quem tem permissão vê "Buscar por código"; senão, só "Colar dados"
+            if (window._can.hubsoftConsultar) {
+                const btn = document.getElementById('hs-buscar-btn');
+                if (btn) btn.style.display = 'inline-flex';
+            } else {
+                const seg = document.querySelector('#cw-hs-seg .cw-seg-btn[data-mode="buscar"]');
+                if (seg) seg.style.display = 'none';
+                if (window.chamadoWizard) chamadoWizard.hsModo('colar');
+            }
+
             await loadGeminiConfig();
             document.getElementById('appContent').style.display = 'flex';
         });

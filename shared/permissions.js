@@ -62,7 +62,9 @@ const PERMISSOES_CATALOGO = {
     restaurar:         { label: 'Restaurar da lixeira',          default: true  },
     apagarPermanente:  { label: 'Apagar: permanentemente',       default: false, implica: ['moverLixeira'] }
   },
-  'sistema-chamados': {} // sem opções granulares — só acesso sim/não
+  'sistema-chamados': {
+    hubsoftConsultar: { label: 'Consultar cliente na API HubSoft', default: false }
+  }
 };
 
 // Resolve as permissões efetivas de um usuário em um projeto.
