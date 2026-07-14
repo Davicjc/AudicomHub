@@ -201,6 +201,11 @@ const chamadoWizard = {
             const el = document.getElementById('codigoBusca');
             if (el && document.getElementById('cw-hs-buscar').style.display !== 'none') setTimeout(() => el.focus(), 60);
         }
+        if (nome === 'dados') {
+            // O pane estava oculto (scrollHeight=0) quando o auto-resize rodou;
+            // recalcula agora que está visível para acompanhar o conteúdo.
+            if (typeof window._autoResizeCampos === 'function') setTimeout(window._autoResizeCampos, 30);
+        }
         if (nome === 'resultado') this._prepararResultado();
     },
 
