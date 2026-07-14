@@ -38,6 +38,32 @@ Assim que receber essas informações, sigo com o agendamento da visita técnica
 
         // Configurar observadores de mudança nos campos
         this.setupFormObservers();
+        
+        // Configurar auto-resize para textareas da aba de dados
+        this.setupAutoResize();
+    }
+
+    setupAutoResize() {
+        const textareas = ['falha', 'localCliente', 'instrucao'].map(id => document.getElementById(id)).filter(Boolean);
+        
+        window._autoResizeCampos = () => {
+            textareas.forEach(tx => {
+                tx.style.height = 'auto';
+                tx.style.height = (tx.scrollHeight) + 'px';
+            });
+        };
+
+        textareas.forEach(tx => {
+            tx.style.overflow = 'hidden';
+            tx.style.resize = 'none';
+            tx.style.minHeight = '60px';
+            tx.addEventListener('input', () => {
+                tx.style.height = 'auto';
+                tx.style.height = (tx.scrollHeight) + 'px';
+            });
+        });
+        
+        setTimeout(window._autoResizeCampos, 100);
     }
 
     bindEvents() {
@@ -486,6 +512,8 @@ ${entrada}
         this.salvarUltimoScript();
         
         this.form.reset();
+        if (typeof window._autoResizeCampos === 'function') setTimeout(window._autoResizeCampos, 50);
+        
         this.atualizarResumo();
         this.mostrarToast('Formulário limpo! Último script salvo para recuperação.', 'info');
     }
@@ -948,6 +976,9 @@ RETORNE EXATAMENTE este JSON:
 
         this.mostrarStatusExtracao(camposPreenchidos, camposFaltando);
         this.mostrarToast(`✓ ${camposPreenchidos.length} campos preenchidos automaticamente!`, 'success');
+
+        // Ajustar textareas ao texto injetado
+        if (typeof window._autoResizeCampos === 'function') setTimeout(window._autoResizeCampos, 50);
 
         // Gerar resumo de agenda automaticamente
         this.atualizarResumo();
