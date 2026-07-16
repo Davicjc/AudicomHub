@@ -823,8 +823,8 @@ async function abrirFormRonda(id = null) {
 
   const r = id ? _rondas.find(x => x.id === id) : null;
   _rondaEraRascunho = !!(r && r.status === 'rascunho');
-  const inicioValor = r && r.horaInicio ? dataHoraInputLocal(new Date(tsMs(r.horaInicio))) : dataHoraInputLocal(new Date());
-  const terminoValor = r && r.horaTermino ? dataHoraInputLocal(new Date(tsMs(r.horaTermino))) : '';
+  const inicioValor = r && r.horaInicio ? dataHoraInputLocal(new Date(tsMs(r.horaInicio))).slice(11,16) : dataHoraInputLocal(new Date()).slice(11,16);
+  const terminoValor = r && r.horaTermino ? dataHoraInputLocal(new Date(tsMs(r.horaTermino))).slice(11,16) : '';
 
   // técnicos (admin pode escolher outro)
   let tecOptions = '';
@@ -855,11 +855,11 @@ async function abrirFormRonda(id = null) {
       <div class="form-row">
         <div class="form-group">
           <label class="field-label">Hora de início *</label>
-          <input type="datetime-local" class="input" id="rHoraInicio" value="${inicioValor}">
+          <input type="time" class="input" id="rHoraInicio" value="${inicioValor}">
         </div>
         <div class="form-group">
           <label class="field-label">Hora de término</label>
-          <input type="datetime-local" class="input" id="rHoraTermino" value="${terminoValor}">
+          <input type="time" class="input" id="rHoraTermino" value="${terminoValor}">
         </div>
       </div>
       ${window._isAdmin ? `<div class="form-group"><label class="field-label">Técnico responsável</label><select class="input" id="rTecnico">${tecOptions}</select></div>` : ''}
@@ -1002,10 +1002,10 @@ function coletarDadosFormRonda(status) {
     localId, localNome: local ? local.nome : '',
     ...tecnico,
     dataRonda: dataStr ? firebase.firestore.Timestamp.fromDate(new Date(dataStr + 'T12:00:00')) : null,
-    horaInicio: timestampDataHoraInput((document.getElementById('rHoraInicio') || {}).value),
-    horaTermino: timestampDataHoraInput((document.getElementById('rHoraTermino') || {}).value),
-    horaInicioLocal: (document.getElementById('rHoraInicio') || {}).value || '',
-    horaTerminoLocal: (document.getElementById('rHoraTermino') || {}).value || '',
+    horaInicio: (() => { const h = (document.getElementById('rHoraInicio') || {}).value || ''; return h ? timestampDataHoraInput(dataStr + 'T' + h) : null; })(),
+    horaTermino: (() => { const h = (document.getElementById('rHoraTermino') || {}).value || ''; return h ? timestampDataHoraInput(dataStr + 'T' + h) : null; })(),
+    horaInicioLocal: (() => { const h = (document.getElementById('rHoraInicio') || {}).value || ''; return h ? dataStr + 'T' + h : ''; })(),
+    horaTerminoLocal: (() => { const h = (document.getElementById('rHoraTermino') || {}).value || ''; return h ? dataStr + 'T' + h : ''; })(),
     localVisto: { ok: !!(document.getElementById('rLocalOk') || {}).checked, obs: ((document.getElementById('rLocalObs') || {}).value || '').trim() },
     catracas, pecasTrocadas,
     demaisInfos: ((document.getElementById('rInfos') || {}).value || '').trim(),
@@ -1238,7 +1238,7 @@ async function salvarRonda() {
   const btn = document.getElementById('btnSalvarRonda');
   btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando…';
   clearTimeout(_autosaveRondaTimer);
-  if (!document.getElementById('rHoraTermino').value) document.getElementById('rHoraTermino').value = dataHoraInputLocal(new Date());
+  if (!document.getElementById('rHoraTermino').value) { const _n = new Date(); document.getElementById('rHoraTermino').value = String(_n.getHours()).padStart(2,'0') + ':' + String(_n.getMinutes()).padStart(2,'0'); }
   const rExist = _rondaEdit ? _rondas.find(x => x.id === _rondaEdit) : null;
   const eraCriacao = !_rondaEdit || _rondaEraRascunho || (rExist && rExist.status === 'rascunho');
   const dados = coletarDadosFormRonda('concluida');
