@@ -62,6 +62,30 @@ const PERMISSOES_CATALOGO = {
     restaurar:         { label: 'Restaurar da lixeira',          default: true  },
     apagarPermanente:  { label: 'Apagar: permanentemente',       default: false, implica: ['moverLixeira'] }
   },
+  'ronda-barueri': {
+    visualizar:        { label: 'Visualizar rondas e dashboard', default: true  },
+    visualizarLogs:    { label: 'Visualizar logs',               default: false },
+    registrarRonda:    { label: 'Registrar rondas',              default: true  },
+    editar:            { label: 'Editar rondas finalizadas',                 default: false },
+    gerenciarLocais:   { label: 'Cadastrar locais e catracas',   default: false },
+    gerenciarProdutos: { label: 'Cadastrar produtos/peças',      default: false },
+    gerenciarClientes: { label: 'Gerenciar acessos de clientes', default: false },
+    moverLixeira:      { label: 'Apagar: mover p/ lixeira',      default: true  },
+    restaurar:         { label: 'Restaurar da lixeira',          default: true  },
+    apagarPermanente:  { label: 'Apagar: permanentemente',       default: false, implica: ['moverLixeira'] }
+  },
+  'ronda-jundiai': {
+    visualizar:        { label: 'Visualizar rondas e dashboard', default: true  },
+    visualizarLogs:    { label: 'Visualizar logs',               default: false },
+    registrarRonda:    { label: 'Registrar rondas',              default: true  },
+    editar:            { label: 'Editar rondas finalizadas',                 default: false },
+    gerenciarLocais:   { label: 'Cadastrar locais e catracas',   default: false },
+    gerenciarProdutos: { label: 'Cadastrar produtos/peças',      default: false },
+    gerenciarClientes: { label: 'Gerenciar acessos de clientes', default: false },
+    moverLixeira:      { label: 'Apagar: mover p/ lixeira',      default: true  },
+    restaurar:         { label: 'Restaurar da lixeira',          default: true  },
+    apagarPermanente:  { label: 'Apagar: permanentemente',       default: false, implica: ['moverLixeira'] }
+  },
   'sistema-chamados': {
     hubsoftConsultar: { label: 'Consultar cliente na API HubSoft', default: false }
   }

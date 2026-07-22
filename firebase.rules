@@ -74,6 +74,12 @@ service cloud.firestore {
     function isClienteLinkcall() {
       return isMembroAtivo() && meuDoc().get('rondaLinkcallCliente', false) == true;
     }
+    function isClienteBarueri() {
+      return isMembroAtivo() && meuDoc().get('rondaBarueriCliente', false) == true;
+    }
+    function isClienteJundiai() {
+      return isMembroAtivo() && meuDoc().get('rondaJundiaiCliente', false) == true;
+    }
 
     function statusRonda(dados) {
       return dados.get('status', 'concluida');
@@ -174,6 +180,82 @@ service cloud.firestore {
                     || pode('ronda-linkcall', 'editar', false))));
     }
 
+    function rondaBarueri(rid) {
+      return get(/databases/$(database)/documents/ronda-barueri-rondas/$(rid)).data;
+    }
+    function podeLerRondaBarueri(dados) {
+      return temProjeto('ronda-barueri')
+        && (isAdmin()
+            || statusRonda(dados) == 'concluida'
+            || (!isClienteBarueri() && isMinhaRonda(dados)));
+    }
+    function podeCriarRondaBarueri(dados) {
+      return !isClienteBarueri()
+        && pode('ronda-barueri', 'registrarRonda', true)
+        && statusRondaValido(dados)
+        && (isAdmin() || isMinhaRonda(dados));
+    }
+    function podeAtualizarRondaBarueri() {
+      return !isClienteBarueri()
+        && statusRondaValido(request.resource.data)
+        && (isAdmin()
+            || (isMinhaRonda(resource.data)
+                && isMinhaRonda(request.resource.data)
+                && pode('ronda-barueri', 'registrarRonda', true))
+            || (statusRonda(resource.data) == 'concluida'
+                && (pode('ronda-barueri', 'registrarRonda', true)
+                    || pode('ronda-barueri', 'editar', false)
+                    || pode('ronda-barueri', 'moverLixeira', true)
+                    || pode('ronda-barueri', 'restaurar', true))));
+    }
+    function podeEscreverFotoBarueri(rid) {
+      return !isClienteBarueri()
+        && (isAdmin()
+            || (isMinhaRonda(rondaBarueri(rid))
+                && pode('ronda-barueri', 'registrarRonda', true))
+            || (statusRonda(rondaBarueri(rid)) == 'concluida'
+                && (pode('ronda-barueri', 'registrarRonda', true)
+                    || pode('ronda-barueri', 'editar', false))));
+    }
+
+    function rondaJundiai(rid) {
+      return get(/databases/$(database)/documents/ronda-jundiai-rondas/$(rid)).data;
+    }
+    function podeLerRondaJundiai(dados) {
+      return temProjeto('ronda-jundiai')
+        && (isAdmin()
+            || statusRonda(dados) == 'concluida'
+            || (!isClienteJundiai() && isMinhaRonda(dados)));
+    }
+    function podeCriarRondaJundiai(dados) {
+      return !isClienteJundiai()
+        && pode('ronda-jundiai', 'registrarRonda', true)
+        && statusRondaValido(dados)
+        && (isAdmin() || isMinhaRonda(dados));
+    }
+    function podeAtualizarRondaJundiai() {
+      return !isClienteJundiai()
+        && statusRondaValido(request.resource.data)
+        && (isAdmin()
+            || (isMinhaRonda(resource.data)
+                && isMinhaRonda(request.resource.data)
+                && pode('ronda-jundiai', 'registrarRonda', true))
+            || (statusRonda(resource.data) == 'concluida'
+                && (pode('ronda-jundiai', 'registrarRonda', true)
+                    || pode('ronda-jundiai', 'editar', false)
+                    || pode('ronda-jundiai', 'moverLixeira', true)
+                    || pode('ronda-jundiai', 'restaurar', true))));
+    }
+    function podeEscreverFotoJundiai(rid) {
+      return !isClienteJundiai()
+        && (isAdmin()
+            || (isMinhaRonda(rondaJundiai(rid))
+                && pode('ronda-jundiai', 'registrarRonda', true))
+            || (statusRonda(rondaJundiai(rid)) == 'concluida'
+                && (pode('ronda-jundiai', 'registrarRonda', true)
+                    || pode('ronda-jundiai', 'editar', false))));
+    }
+
     // Update mexe SOMENTE nos campos listados (usado p/ proteger users).
     function apenasCampos(campos) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
@@ -203,7 +285,13 @@ service cloud.firestore {
             && apenasCampos(['rondaCallinkCliente', 'rondaCallinkLocais']))
         // idem Ronda Linkcall.
         || (pode('ronda-linkcall', 'gerenciarClientes', false)
-            && apenasCampos(['rondaLinkcallCliente', 'rondaLinkcallLocais']));
+            && apenasCampos(['rondaLinkcallCliente', 'rondaLinkcallLocais']))
+        // idem Ronda Callink Barueri.
+        || (pode('ronda-barueri', 'gerenciarClientes', false)
+            && apenasCampos(['rondaBarueriCliente', 'rondaBarueriLocais']))
+        // idem Ronda Callink Jundiaí.
+        || (pode('ronda-jundiai', 'gerenciarClientes', false)
+            && apenasCampos(['rondaJundiaiCliente', 'rondaJundiaiLocais']));
     }
 
     // ================================================================
@@ -397,6 +485,112 @@ service cloud.firestore {
       allow read:   if temProjeto('ronda-linkcall') && pode('ronda-linkcall', 'visualizarLogs', false);
       allow create: if temProjeto('ronda-linkcall')
                     && request.resource.data.projeto == 'ronda-linkcall'
+                    && request.resource.data.usuarioUid == request.auth.uid
+                    && request.resource.data.criadoEm == request.time;
+      allow update, delete: if false;
+    }
+
+    // ================================================================
+    // RONDA CALLINK BARUERI (clone independente — prefixo ronda-barueri)
+    // ================================================================
+    match /ronda-barueri-locais/{lid} {
+      allow read:          if temProjeto('ronda-barueri');
+      allow create, update : if !isClienteBarueri()
+                              && (pode('ronda-barueri', 'gerenciarLocais', false)
+                                  || pode('ronda-barueri', 'moverLixeira', true)
+                                  || pode('ronda-barueri', 'restaurar', true));
+      allow delete:        if !isClienteBarueri()
+                              && (pode('ronda-barueri', 'gerenciarLocais', false)
+                                  || pode('ronda-barueri', 'apagarPermanente', false));
+    }
+    match /ronda-barueri-locais/{lid}/catracas/{cid} {
+      allow read:                 if temProjeto('ronda-barueri');
+      allow create, update, delete : if !isClienteBarueri()
+                                     && pode('ronda-barueri', 'gerenciarLocais', false);
+    }
+    match /ronda-barueri-produtos/{pid} {
+      allow read:          if temProjeto('ronda-barueri');
+      allow create, update : if !isClienteBarueri()
+                              && (pode('ronda-barueri', 'gerenciarProdutos', false)
+                                  || pode('ronda-barueri', 'moverLixeira', true)
+                                  || pode('ronda-barueri', 'restaurar', true));
+      allow delete:        if !isClienteBarueri()
+                              && (pode('ronda-barueri', 'gerenciarProdutos', false)
+                                  || pode('ronda-barueri', 'apagarPermanente', false));
+    }
+    match /ronda-barueri-rondas/{rid} {
+      allow read:   if podeLerRondaBarueri(resource.data);
+      allow create: if podeCriarRondaBarueri(request.resource.data);
+      allow update: if podeAtualizarRondaBarueri();
+      allow delete: if !isClienteBarueri() && pode('ronda-barueri', 'apagarPermanente', false);
+    }
+    match /ronda-barueri-rondas/{rid}/fotos/{fid} {
+      allow read:                 if podeLerRondaBarueri(rondaBarueri(rid));
+      allow create, update, delete : if podeEscreverFotoBarueri(rid);
+    }
+    match /lixeira-ronda-barueri/{id} {
+      allow read:   if temProjeto('ronda-barueri');
+      allow create: if !isClienteBarueri() && pode('ronda-barueri', 'moverLixeira', true);
+      allow update: if !isClienteBarueri() && pode('ronda-barueri', 'restaurar', true);
+      allow delete: if !isClienteBarueri() && pode('ronda-barueri', 'apagarPermanente', false);
+    }
+    match /ronda-barueri-logs/{id} {
+      allow read:   if temProjeto('ronda-barueri') && pode('ronda-barueri', 'visualizarLogs', false);
+      allow create: if temProjeto('ronda-barueri')
+                    && request.resource.data.projeto == 'ronda-barueri'
+                    && request.resource.data.usuarioUid == request.auth.uid
+                    && request.resource.data.criadoEm == request.time;
+      allow update, delete: if false;
+    }
+
+    // ================================================================
+    // RONDA CALLINK JUNDIAÍ (clone independente — prefixo ronda-jundiai)
+    // ================================================================
+    match /ronda-jundiai-locais/{lid} {
+      allow read:          if temProjeto('ronda-jundiai');
+      allow create, update : if !isClienteJundiai()
+                              && (pode('ronda-jundiai', 'gerenciarLocais', false)
+                                  || pode('ronda-jundiai', 'moverLixeira', true)
+                                  || pode('ronda-jundiai', 'restaurar', true));
+      allow delete:        if !isClienteJundiai()
+                              && (pode('ronda-jundiai', 'gerenciarLocais', false)
+                                  || pode('ronda-jundiai', 'apagarPermanente', false));
+    }
+    match /ronda-jundiai-locais/{lid}/catracas/{cid} {
+      allow read:                 if temProjeto('ronda-jundiai');
+      allow create, update, delete : if !isClienteJundiai()
+                                     && pode('ronda-jundiai', 'gerenciarLocais', false);
+    }
+    match /ronda-jundiai-produtos/{pid} {
+      allow read:          if temProjeto('ronda-jundiai');
+      allow create, update : if !isClienteJundiai()
+                              && (pode('ronda-jundiai', 'gerenciarProdutos', false)
+                                  || pode('ronda-jundiai', 'moverLixeira', true)
+                                  || pode('ronda-jundiai', 'restaurar', true));
+      allow delete:        if !isClienteJundiai()
+                              && (pode('ronda-jundiai', 'gerenciarProdutos', false)
+                                  || pode('ronda-jundiai', 'apagarPermanente', false));
+    }
+    match /ronda-jundiai-rondas/{rid} {
+      allow read:   if podeLerRondaJundiai(resource.data);
+      allow create: if podeCriarRondaJundiai(request.resource.data);
+      allow update: if podeAtualizarRondaJundiai();
+      allow delete: if !isClienteJundiai() && pode('ronda-jundiai', 'apagarPermanente', false);
+    }
+    match /ronda-jundiai-rondas/{rid}/fotos/{fid} {
+      allow read:                 if podeLerRondaJundiai(rondaJundiai(rid));
+      allow create, update, delete : if podeEscreverFotoJundiai(rid);
+    }
+    match /lixeira-ronda-jundiai/{id} {
+      allow read:   if temProjeto('ronda-jundiai');
+      allow create: if !isClienteJundiai() && pode('ronda-jundiai', 'moverLixeira', true);
+      allow update: if !isClienteJundiai() && pode('ronda-jundiai', 'restaurar', true);
+      allow delete: if !isClienteJundiai() && pode('ronda-jundiai', 'apagarPermanente', false);
+    }
+    match /ronda-jundiai-logs/{id} {
+      allow read:   if temProjeto('ronda-jundiai') && pode('ronda-jundiai', 'visualizarLogs', false);
+      allow create: if temProjeto('ronda-jundiai')
+                    && request.resource.data.projeto == 'ronda-jundiai'
                     && request.resource.data.usuarioUid == request.auth.uid
                     && request.resource.data.criadoEm == request.time;
       allow update, delete: if false;
