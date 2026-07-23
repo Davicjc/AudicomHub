@@ -37,6 +37,7 @@ users/{uid}.permissions = {
   'suporte-operacoes':       { adicionar, editar, reordenarItens, reordenarAbas, moverLixeira, restaurar, apagarPermanente, migrar },
   'agregador-links':         { adicionar, editar, reordenarItens, reordenarAbas, moverLixeira, restaurar, apagarPermanente },
   'solicitacao-manutencoes': { criar, painelAdm },
+  'solicitacao-equipamentos':{ criar, gerenciarProdutos, gerenciarStatus, verTodos, moverLixeira, restaurar, apagarPermanente },
   'sistema-chamados':        { hubsoftConsultar },
   'ronda-callink':           { visualizar, registrarRonda, editar, gerenciarLocais, gerenciarProdutos, gerenciarClientes, moverLixeira, restaurar, apagarPermanente },
   'ronda-linkcall':          { visualizar, registrarRonda, editar, gerenciarLocais, gerenciarProdutos, gerenciarClientes, moverLixeira, restaurar, apagarPermanente }
@@ -166,6 +167,21 @@ projetos/{projectId}/...          → conteúdo de cada projeto
 lixeira-{projectId}/{id}          → itens deletados (soft-delete)
 ```
 
+**Solicitação de Equipamentos e Produtos** (projectId `solicitacao-equipamentos`, pasta `projetos/solicitacao-equipamentos`) — sistema de requisição de equipamentos/produtos com fluxo de aprovação e chat. Usa coleção top-level própria:
+```
+solicitacoes-equipamentos/{id}            → { titulo, categoria, prioridade, descricao,
+                                              itens:[{nome,qtd,valorUnit,link}], valorTotal,
+                                              imagens:[{base64,nome}], aprovadores:[{uid,nome,email,status,comentario,em}],
+                                              status, nMensagens, criadoPor/Nome/Uid, criadoEm, deletado }
+solicitacoes-equipamentos/{id}/mensagens/{id} → chat + LOG IMUTÁVEL { tipo?:'log', texto, logIcon?, anexo:{tipo:'image'|'pdf',base64,nome}, autorNome/Email/Uid, autorAdmin, criadoEm }
+produtos-equipamentos/{id}                → catálogo p/ reuso { nome, valorRef, categoria, link, criadoPor, criadoEm }
+lixeira-solicitacao-equipamentos/{id}     → { refId, titulo, restaurado }
+```
+`status` = `pendente`|`aprovada`|`reprovada`|`comprada`|`recebida`|`cancelada`. Aprovada/reprovada/pendente são **derivados** dos `aprovadores` (qualquer reprovado→reprovada; todos aprovados→aprovada); comprada/recebida/cancelada são **manuais** (permissão `gerenciarStatus`) e sobrepõem o derivado até "Reabrir". A aba **"Todos os Chats"** (permissão `verTodos`, admin sempre) lista todas as solicitações; senão o usuário vê só as que criou ou é aprovador.
+**Participação vs visibilidade:** só quem é **participante** (dono ou aprovador) pode AGIR (chat, editar, status, lixeira, aprovar). Admin que apenas observa via "Todos os Chats" (não está no nome dele) tem **somente leitura** — banner explícito no detalhe + aviso no lugar do input do chat; nenhum botão de ação. Mensagens de admin levam `autorAdmin:true` e exibem o selo **"adm"** (respondido via perfil de visibilidade total). Cada aprovador vê Aprovar/Reprovar só se estiver na lista e pendente (só UI).
+**Seleção de aprovadores** é por **pesquisa** (campo de busca → nomes filtrados → chips), não lista fixa. **Itens** têm autocomplete via `<datalist>` do catálogo `produtos-equipamentos` (escolher um produto preenche valor/link vazios). O catálogo é gerido no modal "Produtos cadastrados" (permissão `gerenciarProdutos`). **Cards** mostram **De:** (criador) e **Para:** (todos os aprovadores/destinatários).
+**Auditoria no chat:** TODA ação vira uma mensagem de sistema (`tipo:'log'`) na mesma subcoleção `mensagens`, renderizada como linha central — abrir/criar, editar, aprovar, reprovar (com motivo), aprovada/reprovada final, alterar status, reabrir, mover p/ lixeira e restaurar. Cada log guarda quem fez e quando (`autorUid`+`criadoEm`); é imutável (rules `update/delete:false`). `registrarLog(solId, texto, icon)` grava; `nMensagens` conta só mensagens humanas. Abertura/fechamento do modal de visualização **não** é logado (evita ruído/escritas). Chat aceita imagem (comprimida via `compressImage`) e PDF (cap ~900KB/anexo p/ caber em 1 doc <1MB); mensagens são imutáveis nas rules. Imagens abrem em lightbox. **Restrição "minhas vs todos" e "participante vs observador" são só de UI** — as rules permitem `read`/`update` a qualquer membro com o projeto.
+
 **Ronda Callink** (projectId `ronda-callink`) — usa coleções top-level próprias (não `projetos/…`):
 ```
 ronda-callink-locais/{id}                    → { nome, endereco, contato, intervaloRondaDias(15), observacoes, ativo }
@@ -195,6 +211,7 @@ Cliente externo (somente leitura, vê só os locais vinculados): `users/{uid}.ro
 | `projetos/suporte-operacoes` | `suporte-operacoes` | `lixeira-operacoes` |
 | `projetos/sistema-chamados` | `sistema-chamados` | (ainda sem lixeira) |
 | `projetos/solicitação-manuntenções` | `solicitação-manuntenções` | (ainda sem lixeira) |
+| `projetos/solicitacao-equipamentos` | `solicitacao-equipamentos` | `lixeira-solicitacao-equipamentos` |
 | `projetos/agregador-links` | `agregador-links` | `lixeira-links` |
 | `projetos/ronda-callink` | `ronda-callink` | `lixeira-ronda-callink` |
 | `projetos/ronda-linkcall` | `ronda-linkcall` | `lixeira-ronda-linkcall` |

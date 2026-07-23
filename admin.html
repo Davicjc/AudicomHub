@@ -572,6 +572,68 @@
     </div>
   </div>
 
+  <!-- ===== MODAL: CONFIG EM MASSA (por projeto) ===== -->
+  <div class="modal-backdrop" id="modalMassa">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="modalMassaTitle">Aplicar em massa</h3>
+        <button class="modal-close" onclick="fecharModal('modalMassa')">×</button>
+      </div>
+
+      <input type="hidden" id="massaProjId">
+
+      <p class="text-muted text-sm" style="margin-bottom:14px">
+        Aplique de uma vez o acesso e as permissões deste projeto a vários usuários, sem abrir perfil por perfil.
+        Vale apenas para usuários comuns — <strong>admins já têm acesso total</strong>.
+      </p>
+
+      <div class="form-group">
+        <label>Aplicar a</label>
+        <select id="massaAlvo" class="input" onchange="renderMassaAlvo()">
+          <option value="todos">Todos os usuários comuns</option>
+          <option value="categoria">Um setor / categoria</option>
+          <option value="selecionados">Selecionar usuários manualmente</option>
+        </select>
+      </div>
+
+      <div class="form-group mt-12" id="massaCategoriaWrap" style="display:none">
+        <label>Setor / Categoria</label>
+        <select id="massaCategoria" class="input" onchange="renderMassaContagem()"></select>
+      </div>
+
+      <div class="form-group mt-12" id="massaSelWrap" style="display:none">
+        <label>Usuários (marque os que deseja)</label>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input type="text" id="massaSelBusca" class="input" placeholder="Buscar usuário…" oninput="renderMassaUserList()" style="flex:1">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="massaMarcarTodos(true)">Todos</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="massaMarcarTodos(false)">Nenhum</button>
+        </div>
+        <div id="massaUserList" style="max-height:220px;overflow-y:auto;border:1px solid var(--border,rgba(255,255,255,.1));border-radius:10px;padding:6px"></div>
+      </div>
+
+      <div class="form-group mt-16">
+        <label>Acesso ao projeto</label>
+        <select id="massaAcesso" class="input" onchange="onMassaAcessoChange()">
+          <option value="conceder">Conceder acesso ao projeto</option>
+          <option value="manter">Manter acesso atual (só ajustar permissões)</option>
+          <option value="remover">Remover acesso ao projeto</option>
+        </select>
+      </div>
+
+      <div class="form-group mt-16" id="massaPermWrap">
+        <label>Permissões a aplicar</label>
+        <p class="text-muted text-sm mt-4" style="margin-bottom:8px">O estado marcado abaixo será gravado para todos os usuários selecionados (sobrescreve as permissões deste projeto).</p>
+        <div class="perm-sub" id="massaPermGrid" style="display:grid"></div>
+      </div>
+
+      <div class="modal-footer">
+        <span class="text-muted text-sm" id="massaContagem" style="margin-right:auto"></span>
+        <button class="btn btn-ghost" onclick="fecharModal('modalMassa')">Cancelar</button>
+        <button class="btn btn-primary" id="massaBtnAplicar" onclick="aplicarMassa()">Aplicar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="_toast"></div>
 
   <script>
@@ -680,6 +742,9 @@
       migrar:           { label: 'Migrar p/ nuvem',  cor: '#14b8a6', icon: 'fa-cloud-arrow-up' },
       painelAdm:        { label: 'Painel admin',     cor: '#fbbf24', icon: 'fa-crown' },
       hubsoftConsultar: { label: 'Consultar HubSoft', cor: '#0ea5e9', icon: 'fa-magnifying-glass' },
+      gerenciarStatus:  { label: 'Alterar status',   cor: '#22c55e', icon: 'fa-flag' },
+      verTodos:         { label: 'Ver todos os chats', cor: '#a855f7', icon: 'fa-comments' },
+      gerenciarProdutos:{ label: 'Gerenciar produtos', cor: '#0ea5e9', icon: 'fa-box' },
     };
 
     // Monta a árvore "projeto → permissões liberadas" para um usuário comum
@@ -1044,6 +1109,158 @@
       return permissions;
     }
 
+    /* ─── CONFIG EM MASSA (por projeto) ─────────────────────────
+       Aplica acesso + permissões de UM projeto a vários usuários de
+       uma vez (todos, por setor ou seleção manual). Só usuários comuns
+       — admins já têm acesso total. */
+    let _massaSel = new Set(); // uids marcados na seleção manual
+
+    function abrirModalMassa(projId) {
+      const p = allProjects.find(x => x.id === projId) || {};
+      document.getElementById('massaProjId').value = projId;
+      document.getElementById('modalMassaTitle').innerHTML =
+        `Config em massa — ${p.icon || '📁'} ${escapeHTML(p.name || projId)}`;
+      document.getElementById('massaAlvo').value = 'todos';
+      preencherSelectCategorias('massaCategoria', '');
+      _massaSel = new Set();
+      document.getElementById('massaSelBusca').value = '';
+      document.getElementById('massaAcesso').value = 'conceder';
+      renderMassaPerms(projId);
+      renderMassaAlvo();
+      onMassaAcessoChange();
+      abrirModal('modalMassa');
+    }
+
+    // Usuários comuns (exclui admin/superadmin — eles já têm tudo)
+    function massaUsuariosComuns() {
+      return allUsers.filter(u => u.role !== 'admin' && u.role !== 'superadmin');
+    }
+
+    function renderMassaPerms(projId) {
+      const grid = document.getElementById('massaPermGrid');
+      const cat = (typeof PERMISSOES_CATALOGO !== 'undefined' && PERMISSOES_CATALOGO[projId]) || {};
+      const chaves = Object.keys(cat);
+      if (!chaves.length) {
+        grid.innerHTML = '<span class="perm-none">Sem permissões granulares — conceder acesso libera tudo neste sistema.</span>';
+        return;
+      }
+      grid.innerHTML = chaves.map(k => {
+        const def = !!cat[k].default;
+        const onchange = k === 'apagarPermanente' ? ` onchange="onPermApagarChange(this, 'massaPermGrid')"` : '';
+        return `<label class="perm-cb-label">
+            <input type="checkbox" class="perm-cb" data-proj="${projId}" data-perm="${k}" ${def ? 'checked' : ''}${onchange}>
+            <span>${cat[k].label}</span>
+          </label>`;
+      }).join('');
+      const ap = grid.querySelector('.perm-cb[data-perm="apagarPermanente"]');
+      if (ap && ap.checked) onPermApagarChange(ap, 'massaPermGrid');
+    }
+
+    function renderMassaAlvo() {
+      const v = document.getElementById('massaAlvo').value;
+      document.getElementById('massaCategoriaWrap').style.display = v === 'categoria' ? 'block' : 'none';
+      document.getElementById('massaSelWrap').style.display = v === 'selecionados' ? 'block' : 'none';
+      if (v === 'selecionados') renderMassaUserList();
+      renderMassaContagem();
+    }
+
+    function onMassaAcessoChange() {
+      const remover = document.getElementById('massaAcesso').value === 'remover';
+      // Ao remover acesso, permissões não fazem sentido.
+      document.getElementById('massaPermWrap').style.display = remover ? 'none' : 'block';
+      renderMassaContagem();
+    }
+
+    function renderMassaUserList() {
+      const termo = (document.getElementById('massaSelBusca').value || '').toLowerCase().trim();
+      let lista = massaUsuariosComuns();
+      if (termo) lista = lista.filter(u => ((u.name || '') + ' ' + (u.email || '')).toLowerCase().includes(termo));
+      const box = document.getElementById('massaUserList');
+      if (!lista.length) { box.innerHTML = '<p class="text-muted text-sm" style="padding:8px">Nenhum usuário comum encontrado.</p>'; return; }
+      box.innerHTML = lista.map(u => `
+        <label class="perm-cb-label" style="padding:6px 8px">
+          <input type="checkbox" value="${u.id}" ${_massaSel.has(u.id) ? 'checked' : ''} onchange="massaToggleSel('${u.id}', this.checked)">
+          <span>${escapeHTML(u.name || u.email)} <span class="text-muted" style="font-size:11px">${escapeHTML(u.email || '')}</span></span>
+        </label>`).join('');
+    }
+    function massaToggleSel(uid, on) {
+      if (on) _massaSel.add(uid); else _massaSel.delete(uid);
+      renderMassaContagem();
+    }
+    function massaMarcarTodos(on) {
+      const termo = (document.getElementById('massaSelBusca').value || '').toLowerCase().trim();
+      let lista = massaUsuariosComuns();
+      if (termo) lista = lista.filter(u => ((u.name || '') + ' ' + (u.email || '')).toLowerCase().includes(termo));
+      lista.forEach(u => { if (on) _massaSel.add(u.id); else _massaSel.delete(u.id); });
+      renderMassaUserList();
+      renderMassaContagem();
+    }
+
+    function massaUsuariosAlvo() {
+      const alvo = document.getElementById('massaAlvo').value;
+      const comuns = massaUsuariosComuns();
+      if (alvo === 'todos') return comuns;
+      if (alvo === 'categoria') {
+        const cat = document.getElementById('massaCategoria').value;
+        return comuns.filter(u => {
+          const existe = u.categoria && allCategorias.some(c => c.id === u.categoria);
+          return cat === '' ? !existe : u.categoria === cat;
+        });
+      }
+      return comuns.filter(u => _massaSel.has(u.id));
+    }
+
+    function renderMassaContagem() {
+      const n = massaUsuariosAlvo().length;
+      document.getElementById('massaContagem').textContent = `${n} usuário(s) serão afetados`;
+    }
+
+    async function aplicarMassa() {
+      const projId = document.getElementById('massaProjId').value;
+      const acesso = document.getElementById('massaAcesso').value;
+      const alvos = massaUsuariosAlvo();
+      if (!alvos.length) { showToast('Nenhum usuário no alvo selecionado.', 'error'); return; }
+
+      // Estado das permissões a gravar
+      const perms = {};
+      document.querySelectorAll('#massaPermGrid .perm-cb').forEach(cb => { perms[cb.dataset.perm] = cb.checked; });
+      if (perms.apagarPermanente) perms.moverLixeira = true; // implica
+
+      const resumo = acesso === 'conceder' ? 'conceder acesso e aplicar as permissões'
+                   : acesso === 'remover'  ? 'REMOVER o acesso ao projeto'
+                   : 'ajustar apenas as permissões';
+      if (!confirm(`Aplicar a ${alvos.length} usuário(s): ${resumo}?\nIsso sobrescreve a configuração deste projeto para eles.`)) return;
+
+      const btn = document.getElementById('massaBtnAplicar');
+      btn.disabled = true; btn.textContent = 'Aplicando…';
+      try {
+        let batch = db.batch(), count = 0, total = 0;
+        for (const u of alvos) {
+          const ref = db.collection('users').doc(u.id);
+          const upd = {};
+          if (acesso === 'conceder') {
+            upd['projects.' + projId] = true;
+            upd['permissions.' + projId] = perms;
+          } else if (acesso === 'remover') {
+            upd['projects.' + projId] = false;
+          } else { // manter acesso, só permissões
+            upd['permissions.' + projId] = perms;
+          }
+          batch.update(ref, upd);
+          count++; total++;
+          if (count >= 400) { await batch.commit(); batch = db.batch(); count = 0; }
+        }
+        if (count > 0) await batch.commit();
+        showToast(`Configuração aplicada a ${total} usuário(s) ✓`, 'success');
+        fecharModal('modalMassa');
+        await carregarUsuarios();
+      } catch (err) {
+        showToast('Erro ao aplicar em massa: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Aplicar';
+      }
+    }
+
     async function salvarUsuario() {
       const userId = document.getElementById('editUserId').value;
       const name   = document.getElementById('editUserName').value.trim();
@@ -1324,6 +1541,7 @@
               <div class="toggle-track"></div>
               <div class="toggle-thumb"></div>
             </label>
+            <button class="btn btn-ghost btn-sm" onclick="abrirModalMassa('${p.id}')" title="Aplicar acesso/permissões para vários usuários de uma vez"><i class="fas fa-users-gear"></i> Config em massa</button>
             <button class="btn btn-ghost btn-sm" onclick="editarProjeto('${p.id}')">Editar</button>
             <button class="btn btn-danger btn-sm" onclick="excluirProjeto('${p.id}')">×</button>
           </div>`;

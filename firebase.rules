@@ -360,6 +360,38 @@ service cloud.firestore {
       allow write: if temProjeto('sistema-chamados');
     }
 
+    // ================================================================
+    // SOLICITAÇÃO DE EQUIPAMENTOS E PRODUTOS (coleção top-level própria)
+    //   Solicitação com itens/links/valor, imagens, aprovadores e chat.
+    //   read/update/delete = membro com o projeto (aprovar/status = UI).
+    //   Chat (mensagens) é IMUTÁVEL: cria só o próprio autor; ninguém
+    //   edita/apaga (só some ao apagar a solicitação permanentemente).
+    // ================================================================
+    match /solicitacoes-equipamentos/{id} {
+      allow read:           if temProjeto('solicitacao-equipamentos');
+      allow create:         if pode('solicitacao-equipamentos', 'criar', true);
+      allow update, delete: if temProjeto('solicitacao-equipamentos');
+
+      match /mensagens/{mid} {
+        allow read:   if temProjeto('solicitacao-equipamentos');
+        allow create: if temProjeto('solicitacao-equipamentos')
+                      && request.resource.data.autorUid == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+    match /lixeira-solicitacao-equipamentos/{id} {
+      allow read:   if temProjeto('solicitacao-equipamentos');
+      allow create: if pode('solicitacao-equipamentos', 'moverLixeira', true);
+      allow update: if pode('solicitacao-equipamentos', 'restaurar', true);
+      allow delete: if pode('solicitacao-equipamentos', 'apagarPermanente', false);
+    }
+    // Catálogo de produtos cadastrados (para reuso ao abrir solicitações):
+    //   leitura p/ qualquer membro com o projeto; gestão só com permissão.
+    match /produtos-equipamentos/{id} {
+      allow read:                   if temProjeto('solicitacao-equipamentos');
+      allow create, update, delete: if pode('solicitacao-equipamentos', 'gerenciarProdutos', false);
+    }
+
     // Lixeiras dos projetos acima (coleções top-level):
     //   create -> moverLixeira | update -> restaurar | delete -> apagarPermanente
     match /lixeira-roteadores/{id} {

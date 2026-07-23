@@ -42,6 +42,27 @@
       gap: 16px;
     }
 
+    .projects-section + .projects-section {
+      margin-top: 40px;
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border, rgba(255,255,255,0.08));
+    }
+
     .project-card {
       padding: 24px;
       text-decoration: none;
@@ -111,11 +132,13 @@
       <p id="greetingSubtitle"></p>
     </div>
 
-    <div class="projects-grid" id="projectsGrid">
+    <div id="projectsGrid">
       <!-- Skeletons de carregamento -->
-      <div class="skeleton glass"></div>
-      <div class="skeleton glass"></div>
-      <div class="skeleton glass"></div>
+      <div class="projects-grid">
+        <div class="skeleton glass"></div>
+        <div class="skeleton glass"></div>
+        <div class="skeleton glass"></div>
+      </div>
     </div>
 
     <div class="empty-state" id="emptyState" style="display:none">
@@ -183,19 +206,33 @@
           }
         }
 
-        let count = 0;
-        projetos.forEach(p => {
-          const hasAccess = isSuperAdmin || isAdmin || (userData.projects && userData.projects[p.id]);
-          if (!hasAccess) return;
-          count++;
-          grid.innerHTML += `
+        // Separa projetos por categoria: Rondas, Estoque e os demais (Sistemas)
+        const acessiveis = projetos.filter(p =>
+          isSuperAdmin || isAdmin || (userData.projects && userData.projects[p.id]));
+        const ehRonda   = p => /^ronda-/.test(p.id);
+        const ehEstoque = p => p.id === 'solicitacao-manutencoes' || p.id === 'solicitacao-equipamentos';
+        const gerais  = acessiveis.filter(p => !ehRonda(p) && !ehEstoque(p));
+        const estoque = acessiveis.filter(ehEstoque);
+        const rondas  = acessiveis.filter(ehRonda);
+
+        const cardHTML = p => `
             <a href="${p.url || '#'}" class="project-card glass glass-hover">
               <div class="card-icon">${p.icon || '📁'}</div>
               <div class="card-name">${p.name}</div>
               <div class="card-desc">${p.desc || ''}</div>
             </a>`;
-        });
 
+        const secaoHTML = (titulo, itens) => !itens.length ? '' : `
+          <section class="projects-section">
+            <div class="section-title">${titulo}</div>
+            <div class="projects-grid">${itens.map(cardHTML).join('')}</div>
+          </section>`;
+
+        grid.innerHTML = secaoHTML('Sistemas', gerais)
+                       + secaoHTML('Estoque', estoque)
+                       + secaoHTML('Rondas', rondas);
+
+        const count = acessiveis.length;
         if (count === 0) {
           grid.style.display = 'none';
           emptyEl.style.display = 'block';
@@ -222,6 +259,7 @@
       { id: 'suporte-operacoes',       name: 'Suporte Operações',          icon: '📡', url: 'projetos/suporte-operacoes/index.html',          desc: 'Tutoriais e procedimentos de ativação de ONU',    ordem: 2, enabled: true },
       { id: 'sistema-chamados',        name: 'Sistema de Chamados',        icon: '🎫', url: 'projetos/sistema-chamados/index.html',           desc: 'Scripts e modelos para atendimento ao cliente',   ordem: 3, enabled: true },
       { id: 'solicitacao-manutencoes', name: 'Solicitação de Manutenções', icon: '🔨', url: 'projetos/solicitação-manuntenções/index.html',  desc: 'Gestão de solicitações de manutenção técnica',    ordem: 4, enabled: true },
+      { id: 'solicitacao-equipamentos', name: 'Solicitação de Equipamentos', icon: '📦', url: 'projetos/solicitacao-equipamentos/index.html', desc: 'Solicitação de equipamentos e produtos com aprovação e chat', ordem: 10, enabled: true },
       { id: 'agregador-links',         name: 'Agregador de Links',         icon: '🔗', url: 'projetos/agregador-links/index.html',            desc: 'Links úteis organizados por abas editáveis',      ordem: 5, enabled: true },
       { id: 'ronda-callink',           name: 'Ronda Callink',              icon: '📍', url: 'projetos/ronda-callink/index.html',              desc: 'Registro e controle de rondas técnicas em campo', ordem: 6, enabled: true },
       { id: 'ronda-linkcall',          name: 'Ronda Linkcall',             icon: '🧭', url: 'projetos/ronda-linkcall/index.html',             desc: 'Rondas técnicas em campo — base independente',    ordem: 7, enabled: true },

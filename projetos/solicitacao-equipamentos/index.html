@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solicitação de Equipamentos - AUDICOM</title>
+    <link rel="manifest" href="../../manifest.webmanifest">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="../../shared/mobile-sidebar.css">
+    <link rel="stylesheet" href="../../shared/app-preferences.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <script src="../../shared/firebase-init.js"></script>
+    <script src="../../shared/auth-guard.js"></script>
+    <script src="../../shared/utils.js"></script>
+    <script src="../../shared/permissions.js"></script>
+    <script src="../../shared/mobile-sidebar.js"></script>
+    <script src="../../shared/app-preferences.js"></script>
+</head>
+<body>
+
+    <div id="appContent" style="display:none">
+
+        <!-- ── Sidebar ─────────────────────────────────────── -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-row">
+                    <div class="sidebar-brand-icon"><i class="fas fa-box-open"></i></div>
+                    <h1>Solicitação de Equipamentos</h1>
+                </div>
+                <p>Equipamentos e produtos</p>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section-label">Solicitações</div>
+                <button class="tab-btn active" data-tab="minhas" onclick="trocarAba('minhas')">
+                    <span class="nav-icon"><i class="fas fa-user-check"></i></span>
+                    <span>Minhas Solicitações</span>
+                    <span class="tab-count" id="countMinhas">0</span>
+                </button>
+                <button class="tab-btn" data-tab="todos" id="tabTodos" onclick="trocarAba('todos')" style="display:none">
+                    <span class="nav-icon"><i class="fas fa-comments"></i></span>
+                    <span>Todos os Chats</span>
+                    <span class="tab-count" id="countTodos">0</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="../../hub.html" class="sidebar-btn" style="text-decoration:none;text-align:center;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.2);margin-bottom:10px;">
+                    <i class="fas fa-arrow-left"></i> Voltar ao Hub
+                </a>
+                <button onclick="window.location.reload(true)" class="sidebar-btn">
+                    <i class="fas fa-sync-alt"></i> Verificar Updates
+                </button>
+                <button id="btnProdutos" onclick="abrirModalProdutos()" class="sidebar-btn" style="display:none">
+                    <i class="fas fa-box"></i> Produtos cadastrados
+                </button>
+                <button id="btnLixeira" onclick="abrirLixeira()" class="sidebar-btn s-danger" style="display:none">
+                    <i class="fas fa-trash-alt"></i> Lixeira
+                </button>
+                <button id="btnNova" onclick="abrirModalNova()" class="sidebar-btn s-primary" style="display:none">
+                    <i class="fas fa-plus"></i> Nova Solicitação
+                </button>
+            </div>
+        </aside>
+
+        <!-- ── Conteúdo ─────────────────────────────────────── -->
+        <main class="content-area">
+            <div class="page-header">
+                <h2 id="pageTitle">Minhas Solicitações</h2>
+                <p id="pageSubtitle">Suas solicitações de equipamentos e produtos.</p>
+            </div>
+
+            <div class="toolbar">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="buscaInput" placeholder="Buscar por título, item ou solicitante…" oninput="renderLista()">
+                </div>
+                <div class="filter-chips" id="filtroChips">
+                    <button class="filter-chip active" data-filtro="todos" onclick="setFiltro('todos')">Todos</button>
+                    <button class="filter-chip" data-filtro="pendente" onclick="setFiltro('pendente')">Pendentes</button>
+                    <button class="filter-chip" data-filtro="aprovada" onclick="setFiltro('aprovada')">Aprovadas</button>
+                    <button class="filter-chip" data-filtro="reprovada" onclick="setFiltro('reprovada')">Reprovadas</button>
+                    <button class="filter-chip" data-filtro="comprada" onclick="setFiltro('comprada')">Compradas</button>
+                    <button class="filter-chip" data-filtro="recebida" onclick="setFiltro('recebida')">Recebidas</button>
+                </div>
+            </div>
+
+            <div class="sol-grid" id="solGrid">
+                <div class="loading-center"><i class="fas fa-circle-notch spin"></i></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ── Modal: Nova / Editar Solicitação ────────────────── -->
+    <div id="modalNova" class="modal-overlay">
+        <div class="modal-box wide">
+            <div class="modal-head">
+                <h3 id="modalNovaTitle"><i class="fas fa-plus"></i> Nova Solicitação</h3>
+                <button class="modal-close" onclick="fecharModalNova()"><i class="fas fa-times"></i></button>
+            </div>
+
+            <div class="field">
+                <label>Título da solicitação</label>
+                <input type="text" id="fTitulo" placeholder="Ex: Compra de roteadores para expansão">
+            </div>
+
+            <div class="field-row">
+                <div class="field">
+                    <label>Categoria</label>
+                    <select id="fCategoria">
+                        <option value="Equipamento">Equipamento</option>
+                        <option value="Produto">Produto</option>
+                        <option value="Ferramenta">Ferramenta</option>
+                        <option value="Material de consumo">Material de consumo</option>
+                        <option value="Peça / Reposição">Peça / Reposição</option>
+                        <option value="Outro">Outro</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Prioridade</label>
+                    <select id="fPrioridade">
+                        <option value="baixa">Baixa</option>
+                        <option value="media" selected>Média</option>
+                        <option value="alta">Alta</option>
+                        <option value="urgente">Urgente</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Descrição / Justificativa</label>
+                <textarea id="fDescricao" rows="3" placeholder="Explique o motivo da solicitação, onde será usado, etc."></textarea>
+            </div>
+
+            <div class="field">
+                <label>Itens (produto, quantidade, valor e link de compra)</label>
+                <div class="item-head">
+                    <span>Produto</span><span>Qtd</span><span>Valor unit. (R$)</span><span class="h-link">Link de compra</span><span></span>
+                </div>
+                <div class="itens-wrap" id="itensWrap"></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+                    <button class="item-add" style="margin-top:0" onclick="abrirListaProdutos()"><i class="fas fa-list"></i> Lista de produtos</button>
+                    <button class="item-add" style="margin-top:0" onclick="addItemRow();recalcularTotalForm()"><i class="fas fa-plus"></i> Adicionar item em branco</button>
+                </div>
+                <div class="itens-total">Total estimado: <b id="itensTotal">R$ 0,00</b></div>
+            </div>
+
+            <div class="field">
+                <label>Imagens (opcional)</label>
+                <div class="upload-zone" onclick="document.getElementById('fImagens').click()">
+                    <i class="fas fa-image"></i>
+                    Clique para anexar imagens dos produtos
+                </div>
+                <input type="file" id="fImagens" accept="image/*" multiple style="display:none" onchange="onImagensSelecionadas(event)">
+                <div class="thumbs" id="thumbsWrap"></div>
+            </div>
+
+            <div class="field">
+                <label>Destinatários / Aprovadores (para quem é a solicitação)</label>
+                <div class="chips-selected" id="aprovChips"></div>
+                <div class="search-picker">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="aprovBusca" autocomplete="off" placeholder="Pesquise pelo nome do aprovador…"
+                           oninput="filtrarAprovadores()" onfocus="filtrarAprovadores()">
+                    <div class="picker-drop" id="aprovDrop"></div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="fecharModalNova()">Cancelar</button>
+                <button class="btn-save" id="btnSalvarNova" onclick="salvarSolicitacao()"><i class="fas fa-save"></i> Salvar solicitação</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal: Detalhe da Solicitação ───────────────────── -->
+    <div id="modalDetalhe" class="modal-overlay">
+        <div class="modal-box wide" id="detalheBox">
+            <div class="modal-head">
+                <h3 id="detTitulo"><i class="fas fa-box-open"></i> Solicitação</h3>
+                <button class="modal-close" onclick="fecharDetalhe()"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="detalheConteudo"></div>
+        </div>
+    </div>
+
+    <!-- ── Modal: Lixeira ──────────────────────────────────── -->
+    <div id="modalLixeira" class="modal-overlay">
+        <div class="modal-box" style="max-width:560px">
+            <div class="modal-head">
+                <h3><i class="fas fa-trash-alt" style="color:#ef4444"></i> Lixeira</h3>
+                <button class="modal-close" onclick="fecharLixeira()"><i class="fas fa-times"></i></button>
+            </div>
+            <p style="font-size:12px;color:var(--text-3);margin:0 0 16px">Restaurar e apagar permanentemente dependem das permissões do seu usuário.</p>
+            <div id="lixeiraContent" style="max-height:60vh;overflow-y:auto"></div>
+        </div>
+    </div>
+
+    <!-- ── Modal: Catálogo de Produtos ─────────────────────── -->
+    <div id="modalProdutos" class="modal-overlay">
+        <div class="modal-box" style="max-width:640px">
+            <div class="modal-head">
+                <h3><i class="fas fa-box"></i> Produtos cadastrados</h3>
+                <button class="modal-close" onclick="fecharModalProdutos()"><i class="fas fa-times"></i></button>
+            </div>
+            <p style="font-size:12px;color:var(--text-3);margin:0 0 14px">Produtos deste catálogo aparecem como sugestão ao adicionar itens numa solicitação.</p>
+
+            <div id="prodForm" style="display:none">
+                <div class="field-row">
+                    <div class="field" style="flex:2"><label>Nome do produto</label><input type="text" id="pNome" placeholder="Ex: Roteador TP-Link Archer C6"></div>
+                    <div class="field" style="flex:1"><label>Valor ref. (R$)</label><input type="number" id="pValor" min="0" step="0.01" placeholder="0,00"></div>
+                </div>
+                <div class="field-row">
+                    <div class="field" style="flex:1"><label>Categoria</label><input type="text" id="pCategoria" placeholder="Equipamento"></div>
+                    <div class="field" style="flex:2"><label>Link de compra (opcional)</label><input type="text" id="pLink" placeholder="https://…"></div>
+                </div>
+                <div class="modal-actions" style="margin-top:4px">
+                    <button class="btn-cancel" onclick="cancelarFormProduto()">Cancelar</button>
+                    <button class="btn-save" id="btnSalvarProd" onclick="salvarProduto()"><i class="fas fa-save"></i> Salvar produto</button>
+                </div>
+            </div>
+
+            <button class="item-add" id="btnNovoProd" onclick="novoProdutoForm()" style="margin-bottom:14px"><i class="fas fa-plus"></i> Cadastrar novo produto</button>
+            <div id="produtosLista" style="max-height:52vh;overflow-y:auto"></div>
+        </div>
+    </div>
+
+    <!-- ── Modal: Seletor de produtos (escolher item da lista) ── -->
+    <div id="modalListaProd" class="modal-overlay" style="z-index:9100">
+        <div class="modal-box" style="max-width:560px">
+            <div class="modal-head">
+                <h3><i class="fas fa-list"></i> Escolher produto</h3>
+                <button class="modal-close" onclick="fecharListaProdutos()"><i class="fas fa-times"></i></button>
+            </div>
+            <p style="font-size:12px;color:var(--text-3);margin:0 0 12px">Clique em um produto para adicioná-lo à solicitação. Inclui o catálogo cadastrado e itens já solicitados.</p>
+            <div class="search-box" style="margin-bottom:12px">
+                <i class="fas fa-search"></i>
+                <input type="text" id="listaProdBusca" autocomplete="off" placeholder="Buscar produto…" oninput="renderListaProdutos()">
+            </div>
+            <div id="listaProdWrap" style="max-height:56vh;overflow-y:auto"></div>
+        </div>
+    </div>
+
+    <!-- Datalist compartilhado dos produtos (autocomplete dos itens) -->
+    <datalist id="produtosDatalist"></datalist>
+
+    <!-- Lightbox -->
+    <div id="lightbox" class="lightbox" onclick="this.classList.remove('aberto')">
+        <img id="lightboxImg" src="" alt="">
+    </div>
+
+    <div class="toast" id="_toast"></div>
+
+    <script src="js/app.js"></script>
+    <script>
+        requireAuth('solicitacao-equipamentos').then(({ user, userData }) => {
+            window._isAdmin      = userData.role === 'superadmin' || userData.role === 'admin';
+            window._isSuperAdmin = userData.role === 'superadmin';
+            window._userEmail    = user.email;
+            window._userUid      = user.uid;
+            window._userNome     = userData.name || user.email;
+            window._can          = resolverPermissoes(userData, 'solicitacao-equipamentos');
+
+            document.getElementById('appContent').style.display = 'flex';
+
+            if (window._can.criar) document.getElementById('btnNova').style.display = '';
+            if (window._can.moverLixeira || window._can.restaurar || window._can.apagarPermanente)
+                document.getElementById('btnLixeira').style.display = '';
+            if (window._can.verTodos) document.getElementById('tabTodos').style.display = '';
+            if (window._can.gerenciarProdutos) document.getElementById('btnProdutos').style.display = '';
+
+            iniciarApp();
+        });
+    </script>
+</body>
+</html>
