@@ -16,8 +16,11 @@ const MSGS    = (id) => COL().doc(id).collection('mensagens');
 const MAX_ANEXO_KB = 900;
 
 let _todas   = [];          // todas as solicitações carregadas (não deletadas)
-let _aba     = 'minhas';    // 'minhas' | 'todos'
+let _aba     = 'minhas';    // 'minhas' | 'todos' | 'metricas'
 let _filtro  = 'todos';     // status
+let _metPeriodo = 'all';    // '30'|'90'|'180'|'365'|'all' — janela do painel de métricas
+let _metDemo    = false;    // painel com dados fictícios (só em memória, não grava no banco)
+let _demoCache  = null;     // dataset demo memoizado
 let _usuarios = [];         // lista p/ escolher aprovadores
 let _produtos = [];         // catálogo de produtos cadastrados
 let _editId  = null;        // id em edição (modal nova)
@@ -130,6 +133,7 @@ function iniciarApp() {
         });
         atualizarContadores();
         renderLista();
+        if (_aba === 'metricas') renderMetricas();  // painel ao vivo
         renderProdutosDatalist();  // inclui itens já solicitados nas sugestões
         if (document.getElementById('modalProdutos').classList.contains('aberto')) renderProdutosLista();
         // Se um detalhe está aberto, atualiza SÓ o painel de informações
@@ -271,6 +275,20 @@ function trocarAba(aba) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === aba));
     const title = document.getElementById('pageTitle');
     const sub   = document.getElementById('pageSubtitle');
+    const areaSol = document.getElementById('solicitacoesArea');
+    const areaMet = document.getElementById('metricasArea');
+
+    if (aba === 'metricas') {
+        title.textContent = 'Relatórios & Métricas';
+        sub.textContent   = 'Painel de indicadores: quem mais pede, gasto por mês, produtos recorrentes e muito mais.';
+        areaSol.style.display = 'none';
+        areaMet.style.display = '';
+        renderMetricas();
+        return;
+    }
+
+    areaSol.style.display = '';
+    areaMet.style.display = 'none';
     if (aba === 'todos') {
         title.textContent = 'Visão Adm';
         sub.textContent   = 'Todas as solicitações e chats de todos os funcionarios — visão administrativa (somente leitura).';
@@ -1137,6 +1155,7 @@ function novoProdutoForm() {
     document.getElementById('pValor').value = '';
     document.getElementById('pCategoria').value = '';
     document.getElementById('pLink').value = '';
+    const dup = document.getElementById('prodDupAlerta'); if (dup) dup.innerHTML = '';
     document.getElementById('prodForm').style.display = '';
     document.getElementById('btnNovoProd').style.display = 'none';
     document.getElementById('pNome').focus();
@@ -1149,12 +1168,14 @@ function editarProdutoForm(id) {
     document.getElementById('pValor').value = p.valorRef != null ? p.valorRef : '';
     document.getElementById('pCategoria').value = p.categoria || '';
     document.getElementById('pLink').value = p.link || '';
+    const dup = document.getElementById('prodDupAlerta'); if (dup) dup.innerHTML = '';
     document.getElementById('prodForm').style.display = '';
     document.getElementById('btnNovoProd').style.display = 'none';
     document.getElementById('pNome').focus();
 }
 function cancelarFormProduto() {
     _prodEditId = null;
+    const dup = document.getElementById('prodDupAlerta'); if (dup) dup.innerHTML = '';
     document.getElementById('prodForm').style.display = 'none';
     document.getElementById('btnNovoProd').style.display = '';
 }
@@ -1191,6 +1212,45 @@ async function salvarProduto() {
         btn.disabled = false; btn.innerHTML = '<i class="fas fa-save"></i> Salvar produto';
     }
 }
+// Alerta ao vivo de duplicata enquanto o usuário digita o nome do produto.
+// Procura no catálogo e também nos itens já usados em solicitações.
+function checarProdutoDuplicado() {
+    const el = document.getElementById('prodDupAlerta');
+    if (!el) return;
+    const nome = (document.getElementById('pNome').value || '').trim().toLowerCase();
+    if (!nome || nome.length < 2) { el.innerHTML = ''; return; }
+
+    // Ignora o próprio produto quando está editando.
+    const noCatalogo = _produtos.find(p =>
+        (p.nome || '').trim().toLowerCase() === nome && p.id !== _prodEditId);
+    let ondeSolicitado = null;
+    if (!noCatalogo) {
+        for (const s of _todas) {
+            if ((s.itens || []).some(it => (it.nome || '').trim().toLowerCase() === nome)) {
+                ondeSolicitado = s.titulo || '(sem título)';
+                break;
+            }
+        }
+    }
+
+    if (noCatalogo) {
+        el.innerHTML = `<div class="dup-alerta dup-alerta--erro">
+            <i class="fas fa-circle-exclamation"></i>
+            <span><b>Este produto já existe no catálogo</b>${noCatalogo.valorRef != null && noCatalogo.valorRef !== '' ? ` (ref. ${escapeHTML(moeda(noCatalogo.valorRef))})` : ''}. Não cadastre de novo — use o existente para não duplicar as métricas.</span>
+        </div>`;
+    } else if (ondeSolicitado) {
+        el.innerHTML = `<div class="dup-alerta dup-alerta--aviso">
+            <i class="fas fa-lightbulb"></i>
+            <span>Um produto com este nome já foi pedido em <b>“${escapeHTML(ondeSolicitado)}”</b>. Você pode cadastrá-lo no catálogo, mas mantenha o <b>mesmo nome</b> para agrupar corretamente o histórico.</span>
+        </div>`;
+    } else {
+        el.innerHTML = `<div class="dup-alerta dup-alerta--ok">
+            <i class="fas fa-circle-check"></i>
+            <span>Nenhum produto com este nome encontrado — pode cadastrar.</span>
+        </div>`;
+    }
+}
+
 async function excluirProduto(id) {
     if (!confirm('Remover este produto do catálogo?')) return;
     try {
@@ -1199,6 +1259,456 @@ async function excluirProduto(id) {
     } catch (err) {
         showToast('Erro ao remover: ' + err.message, 'error');
     }
+}
+
+// ================================================================
+// RELATÓRIOS & MÉTRICAS
+// Todos os cálculos derivam de _todas (solicitações em tempo real) e
+// _produtos (catálogo). Escopo respeita a permissão: quem tem verTodos
+// analisa TODAS as solicitações; os demais, apenas as suas.
+// ================================================================
+const STATUS_COR = {
+    pendente:'#f59e0b', aprovada:'#10b981', reprovada:'#ef4444',
+    comprada:'#3b82f6', recebida:'#818cf8', cancelada:'#94a3b8'
+};
+const MESES_ABREV = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+
+function dataDe(sol) {
+    const ts = sol.criadoEm;
+    if (!ts) return null;                       // serverTimestamp ainda pendente
+    return ts.toDate ? ts.toDate() : new Date(ts);
+}
+function mesLabel(key) {
+    const [y, m] = key.split('-');
+    return `${MESES_ABREV[Number(m) - 1]}/${y.slice(2)}`;
+}
+function plural(n, sing, plur) { return `${n} ${n === 1 ? sing : plur}`; }
+// Moeda compacta p/ os cards KPI (evita cortar valores grandes).
+// >= 1 milhão → "R$ 1,2 mi"; >= 10 mil → "R$ 172,0 mil"; abaixo → valor cheio.
+function moedaKpi(v) {
+    const n = Number(v) || 0;
+    if (n >= 1e6)   return 'R$ ' + (n / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' mi';
+    if (n >= 10000) return 'R$ ' + (n / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' mil';
+    return moeda(n);
+}
+function fmtDias(d) {
+    const n = Math.round(d);
+    if (n <= 0) return 'hoje';
+    if (n === 1) return '1 dia';
+    if (n < 30) return `${n} dias`;
+    const meses = Math.round(n / 30);
+    return meses === 1 ? '~1 mês' : `~${meses} meses`;
+}
+
+function setPeriodoMetricas(p) {
+    _metPeriodo = p;
+    document.querySelectorAll('#metPeriodo .filter-chip')
+        .forEach(c => c.classList.toggle('active', c.dataset.periodo === p));
+    renderMetricas();
+}
+
+function renderMetricas() {
+    const body = document.getElementById('metricasBody');
+    if (!body) return;
+
+    // ── Escopo (permissão) ou modo demo ────────────────────────
+    let base;
+    const scopeEl = document.getElementById('metScope');
+    if (_metDemo) {
+        if (!_demoCache) _demoCache = gerarSolicitacoesDemo();
+        base = _demoCache.slice();
+        if (scopeEl) scopeEl.innerHTML =
+            `<i class="fas fa-flask" style="color:#c084fc"></i> <b style="color:#c084fc">Modo demonstração</b> — ${base.length} solicitações fictícias (não estão salvas no banco)`;
+    } else {
+        const podeTudo = !!window._can.verTodos;
+        base = podeTudo ? _todas.slice() : _todas.filter(pertenceAMim);
+        if (scopeEl) scopeEl.innerHTML = podeTudo
+            ? `<i class="fas fa-globe"></i> Analisando <b>todas as solicitações</b> da equipe`
+            : `<i class="fas fa-user"></i> Analisando <b>apenas as suas solicitações</b>`;
+    }
+
+    // ── Filtro de período ──────────────────────────────────────
+    const dias  = _metPeriodo === 'all' ? null : Number(_metPeriodo);
+    const corte = dias ? Date.now() - dias * 86400000 : null;
+    const sols  = base.filter(s => {
+        if (!corte) return true;
+        const d = dataDe(s);
+        return d && d.getTime() >= corte;
+    });
+
+    if (!sols.length) {
+        body.innerHTML = `<div class="empty-state" style="grid-column:auto">
+            <i class="fas fa-chart-pie"></i>
+            <p>Nenhuma solicitação ${dias ? 'neste período' : 'ainda'} para gerar métricas.</p>
+        </div>`;
+        return;
+    }
+
+    // ── Cálculos ───────────────────────────────────────────────
+    const totalSol   = sols.length;
+    const valorTotal = sols.reduce((a, s) => a + totalSolicitacao(s), 0);
+    const ticket     = totalSol ? valorTotal / totalSol : 0;
+
+    const porStatus = {};
+    sols.forEach(s => { const st = statusEfetivo(s); porStatus[st] = (porStatus[st] || 0) + 1; });
+    const aprovadas  = (porStatus.aprovada || 0) + (porStatus.comprada || 0) + (porStatus.recebida || 0);
+    const decididas  = aprovadas + (porStatus.reprovada || 0);
+    const taxaAprov  = decididas ? (aprovadas / decididas * 100) : 0;
+    const pendentes  = porStatus.pendente || 0;
+    const valorEfetivado = sols
+        .filter(s => ['comprada', 'recebida'].includes(statusEfetivo(s)))
+        .reduce((a, s) => a + totalSolicitacao(s), 0);
+
+    // Por usuário
+    const porUser = {};
+    sols.forEach(s => {
+        const k = s.criadoPorUid || s.criadoPor || 'desconhecido';
+        if (!porUser[k]) porUser[k] = { nome: s.criadoPorNome || s.criadoPor || '—', n: 0, valor: 0 };
+        porUser[k].n++;
+        porUser[k].valor += totalSolicitacao(s);
+    });
+    const usuarios = Object.values(porUser).sort((a, b) => b.n - a.n || b.valor - a.valor);
+
+    // Por mês
+    const porMes = {};
+    sols.forEach(s => {
+        const d = dataDe(s); if (!d) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (!porMes[key]) porMes[key] = { valor: 0, n: 0 };
+        porMes[key].valor += totalSolicitacao(s);
+        porMes[key].n++;
+    });
+    const meses = Object.keys(porMes).sort().slice(-12);  // no máx. 12 colunas
+
+    // Por categoria
+    const porCat = {};
+    sols.forEach(s => {
+        const c = s.categoria || '—';
+        if (!porCat[c]) porCat[c] = { n: 0, valor: 0 };
+        porCat[c].n++; porCat[c].valor += totalSolicitacao(s);
+    });
+    const categorias = Object.entries(porCat)
+        .map(([nome, v]) => ({ nome, ...v })).sort((a, b) => b.valor - a.valor);
+
+    // Produtos (top + recorrência)
+    const prodMap = {};
+    sols.forEach(s => {
+        const d = dataDe(s);
+        const vistoNaSol = new Set();
+        (s.itens || []).forEach(it => {
+            const nome = (it.nome || '').trim(); if (!nome) return;
+            const k = nome.toLowerCase();
+            if (!prodMap[k]) prodMap[k] = { nome, vezes: 0, qtd: 0, valor: 0, datas: [] };
+            const p = prodMap[k];
+            p.qtd   += Number(it.qtd) || 0;
+            p.valor += (Number(it.qtd) || 0) * (Number(it.valorUnit) || 0);
+            if (!vistoNaSol.has(k)) {                 // conta 1x por solicitação
+                vistoNaSol.add(k);
+                p.vezes++;
+                if (d) p.datas.push(d.getTime());
+            }
+        });
+    });
+    const produtos = Object.values(prodMap).sort((a, b) => b.vezes - a.vezes || b.qtd - a.qtd);
+
+    // Recorrência: produtos pedidos 2+ vezes → intervalo médio entre pedidos
+    const recorrentes = produtos
+        .filter(p => p.datas.length >= 2)
+        .map(p => {
+            const ds = p.datas.slice().sort((a, b) => a - b);
+            let soma = 0;
+            for (let i = 1; i < ds.length; i++) soma += (ds[i] - ds[i - 1]);
+            const mediaDias   = soma / (ds.length - 1) / 86400000;
+            const desdeUltimo = (Date.now() - ds[ds.length - 1]) / 86400000;
+            return { ...p, mediaDias, desdeUltimo, previsto: mediaDias - desdeUltimo };
+        })
+        .sort((a, b) => a.mediaDias - b.mediaDias);
+
+    // ── Render ─────────────────────────────────────────────────
+    body.innerHTML =
+        kpiGridHTML({ totalSol, valorTotal, ticket, taxaAprov, pendentes, valorEfetivado, nProdutos: produtos.length }) +
+        `<div class="met-row">
+            ${metCard('Valor solicitado por mês', 'fa-chart-column', colunasMesesHTML(meses, porMes))}
+            ${metCard('Distribuição por status', 'fa-chart-pie', donutStatusHTML(porStatus, totalSol))}
+         </div>` +
+        `<div class="met-row">
+            ${metCard('Quem mais solicita', 'fa-ranking-star', rankUsuariosHTML(usuarios))}
+            ${metCard('Por categoria', 'fa-tags', barrasCategoriaHTML(categorias, valorTotal))}
+         </div>` +
+        metCard('Produtos mais solicitados', 'fa-box', tabelaProdutosHTML(produtos), 'met-card--full') +
+        metCard('Produtos recorrentes — de quanto em quanto tempo são pedidos', 'fa-repeat', tabelaRecorrenciaHTML(recorrentes), 'met-card--full');
+}
+
+// ── Componentes de render ──────────────────────────────────────
+function metCard(titulo, icon, conteudo, extra = '') {
+    return `<div class="met-card ${extra}">
+        <h3><i class="fas ${icon}"></i> ${escapeHTML(titulo)}</h3>
+        ${conteudo}
+    </div>`;
+}
+
+function kpiGridHTML(k) {
+    const cards = [
+        { icon:'fa-file-invoice',  cor:'#818cf8', bg:'rgba(129,140,248,.14)', label:'Solicitações',      val: String(k.totalSol) },
+        { icon:'fa-sack-dollar',   cor:'#10b981', bg:'rgba(16,185,129,.14)',  label:'Valor solicitado',  val: moedaKpi(k.valorTotal),     full: moeda(k.valorTotal) },
+        { icon:'fa-cart-shopping', cor:'#3b82f6', bg:'rgba(59,130,246,.14)',  label:'Efetivado (compr./receb.)', val: moedaKpi(k.valorEfetivado), full: moeda(k.valorEfetivado) },
+        { icon:'fa-receipt',       cor:'#c084fc', bg:'rgba(192,132,252,.14)', label:'Ticket médio',      val: moedaKpi(k.ticket),         full: moeda(k.ticket) },
+        { icon:'fa-thumbs-up',     cor:'#34d399', bg:'rgba(52,211,153,.14)',  label:'Taxa de aprovação', val: `${k.taxaAprov.toFixed(0)}%` },
+        { icon:'fa-clock',         cor:'#f59e0b', bg:'rgba(245,158,11,.14)',  label:'Pendentes',         val: String(k.pendentes) },
+        { icon:'fa-box',           cor:'#a5b4fc', bg:'rgba(165,180,252,.14)', label:'Produtos distintos', val: String(k.nProdutos) },
+    ];
+    return `<div class="kpi-grid">${cards.map(c => `
+        <div class="kpi-card">
+            <div class="kpi-icon" style="color:${c.cor};background:${c.bg}"><i class="fas ${c.icon}"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-val" title="${escapeHTML(c.full || c.val)}">${escapeHTML(c.val)}</div>
+                <div class="kpi-label">${escapeHTML(c.label)}</div>
+            </div>
+        </div>`).join('')}</div>`;
+}
+
+function colunasMesesHTML(meses, porMes) {
+    if (!meses.length) return semDados();
+    const max = Math.max(...meses.map(m => porMes[m].valor)) || 1;
+    return `<div class="col-chart">${meses.map(m => {
+        const v = porMes[m].valor;
+        const h = Math.max(4, Math.round(v / max * 100));
+        const rot = v >= 1000 ? 'R$ ' + (v / 1000).toFixed(1).replace('.', ',') + 'k' : moeda(v);
+        return `<div class="col-item" title="${escapeHTML(mesLabel(m))}: ${escapeHTML(moeda(v))} · ${plural(porMes[m].n,'pedido','pedidos')}">
+            <div class="col-val">${escapeHTML(rot)}</div>
+            <div class="col-bar" style="height:${h}%"></div>
+            <div class="col-lbl">${escapeHTML(mesLabel(m))}</div>
+        </div>`;
+    }).join('')}</div>`;
+}
+
+function donutStatusHTML(porStatus, total) {
+    const ordem = ['pendente','aprovada','reprovada','comprada','recebida','cancelada'];
+    let acc = 0;
+    const segs = [];
+    ordem.forEach(st => {
+        const n = porStatus[st] || 0; if (!n) return;
+        const frac = n / total;
+        segs.push(`${STATUS_COR[st]} ${(acc*360).toFixed(2)}deg ${((acc+frac)*360).toFixed(2)}deg`);
+        acc += frac;
+    });
+    const grad = segs.length ? `conic-gradient(${segs.join(',')})` : 'var(--surface-3)';
+    const legenda = ordem.filter(st => porStatus[st]).map(st => `
+        <div class="donut-leg-item">
+            <span class="donut-dot" style="background:${STATUS_COR[st]}"></span>
+            <span class="donut-leg-lbl">${STATUS_LABEL[st]}</span>
+            <span class="donut-leg-val">${porStatus[st]} · ${(porStatus[st]/total*100).toFixed(0)}%</span>
+        </div>`).join('');
+    return `<div class="donut-wrap">
+        <div class="donut" style="background:${grad}"><div class="donut-hole"><b>${total}</b><span>total</span></div></div>
+        <div class="donut-legend">${legenda}</div>
+    </div>`;
+}
+
+function rankUsuariosHTML(usuarios) {
+    if (!usuarios.length) return semDados();
+    const max = usuarios[0].n || 1;
+    return `<div class="rank-list">${usuarios.slice(0, 10).map((u, i) => `
+        <div class="rank-item">
+            <div class="rank-pos">${i + 1}</div>
+            <div class="rank-av">${escapeHTML(iniciais(u.nome))}</div>
+            <div class="rank-main">
+                <div class="rank-nome">${escapeHTML(u.nome)}</div>
+                <div class="rank-bar-track"><div class="rank-bar" style="width:${Math.max(6, u.n/max*100)}%"></div></div>
+            </div>
+            <div class="rank-vals">
+                <div class="rank-n">${plural(u.n, 'pedido', 'pedidos')}</div>
+                <div class="rank-val">${moeda(u.valor)}</div>
+            </div>
+        </div>`).join('')}</div>`;
+}
+
+function barrasCategoriaHTML(categorias, valorTotal) {
+    if (!categorias.length) return semDados();
+    const max = Math.max(...categorias.map(c => c.valor)) || 1;
+    return `<div class="cat-list">${categorias.map(c => `
+        <div class="cat-item">
+            <div class="cat-top">
+                <span class="cat-nome">${escapeHTML(c.nome)}</span>
+                <span class="cat-val">${moeda(c.valor)} <span class="cat-n">· ${plural(c.n,'item','itens')}</span></span>
+            </div>
+            <div class="cat-bar-track"><div class="cat-bar" style="width:${Math.max(4, c.valor/max*100)}%"></div></div>
+        </div>`).join('')}</div>`;
+}
+
+function tabelaProdutosHTML(produtos) {
+    if (!produtos.length) return semDados();
+    return `<div class="met-table-wrap"><table class="met-table">
+        <thead><tr><th>#</th><th>Produto</th><th class="num">Vezes pedido</th><th class="num">Qtd total</th><th class="num">Valor total</th></tr></thead>
+        <tbody>${produtos.slice(0, 20).map((p, i) => `
+            <tr>
+                <td class="met-rank">${i + 1}</td>
+                <td>${escapeHTML(p.nome)}${p.vezes >= 3 ? ' <span class="tag-hot"><i class="fas fa-fire"></i> recorrente</span>' : ''}</td>
+                <td class="num"><b>${p.vezes}</b></td>
+                <td class="num">${p.qtd}</td>
+                <td class="num">${moeda(p.valor)}</td>
+            </tr>`).join('')}</tbody>
+    </table></div>${produtos.length > 20 ? `<div class="met-more">+ ${produtos.length - 20} outros produtos</div>` : ''}`;
+}
+
+function tabelaRecorrenciaHTML(recorrentes) {
+    if (!recorrentes.length) {
+        return `<div class="met-hint"><i class="fas fa-circle-info"></i>
+            Ainda não há produtos pedidos 2 ou mais vezes no período. Quando um item for solicitado repetidamente, a frequência média entre os pedidos aparecerá aqui.</div>`;
+    }
+    return `<div class="met-table-wrap"><table class="met-table">
+        <thead><tr><th>Produto</th><th class="num">Nº de pedidos</th><th class="num">A cada</th><th class="num">Último pedido</th><th>Próximo previsto</th></tr></thead>
+        <tbody>${recorrentes.slice(0, 25).map(p => {
+            let prev, cls;
+            if (p.previsto <= 0)      { prev = `<span class="prev-due"><i class="fas fa-triangle-exclamation"></i> pedir agora</span>`; }
+            else if (p.previsto <= 7) { prev = `<span class="prev-soon">em ${fmtDias(p.previsto)}</span>`; }
+            else                      { prev = `<span class="prev-ok">em ${fmtDias(p.previsto)}</span>`; }
+            return `<tr>
+                <td>${escapeHTML(p.nome)}</td>
+                <td class="num"><b>${p.datas.length}</b></td>
+                <td class="num"><span class="freq-badge">${fmtDias(p.mediaDias)}</span></td>
+                <td class="num">${fmtDias(p.desdeUltimo)} atrás</td>
+                <td>${prev}</td>
+            </tr>`;
+        }).join('')}</tbody>
+    </table></div>
+    <div class="met-hint" style="margin-top:12px"><i class="fas fa-lightbulb"></i>
+        "A cada" é o intervalo médio entre pedidos do mesmo produto. "Próximo previsto" projeta quando ele deve ser solicitado de novo — útil para antecipar compras recorrentes.</div>`;
+}
+
+function semDados() {
+    return `<div class="met-hint"><i class="fas fa-circle-info"></i> Sem dados suficientes no período selecionado.</div>`;
+}
+
+// ── Modo demonstração (dados fictícios, só em memória) ─────────
+function toggleMetricasDemo() {
+    _metDemo = !_metDemo;
+    const b = document.getElementById('btnDemo');
+    if (b) {
+        b.classList.toggle('ativo', _metDemo);
+        b.innerHTML = _metDemo
+            ? '<i class="fas fa-xmark"></i> Sair do exemplo'
+            : '<i class="fas fa-flask"></i> Dados de exemplo';
+    }
+    if (_metDemo) showToast('Exibindo dados fictícios — nada foi salvo no banco.', 'info');
+    renderMetricas();
+}
+
+// Gera um conjunto rico de solicitações fictícias com recorrência realista.
+// PRNG com seed fixa → mesma "base" sempre que ligar o modo demo.
+function gerarSolicitacoesDemo() {
+    let seed = 20260723;
+    const rnd  = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const rint = (a, b) => Math.floor(rnd() * (b - a + 1)) + a;
+    const pick = arr => arr[Math.floor(rnd() * arr.length)];
+    const DAY  = 86400000;
+    const now  = Date.now();
+
+    const nomes = [
+        'Ana Paula Ribeiro','Carlos Eduardo Lima','Mariana Souza','João Pedro Alves',
+        'Fernanda Costa','Rafael Almeida','Juliana Martins','Bruno Carvalho',
+        'Patrícia Gomes','Diego Fernandes','Camila Rocha','Thiago Barbosa'
+    ];
+    const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]+/g, '.');
+    const users = nomes.map((n, i) => ({
+        uid: 'demo-u' + i,
+        nome: n,
+        email: slug(n) + '@audicomtelecom.com.br'
+    }));
+
+    // freq = cadência típica (dias) → define o quão recorrente é o produto.
+    const produtos = [
+        { nome:'Roteador TP-Link Archer C6',        valor:189.90, cat:'Equipamento',         freq:20  },
+        { nome:'Cabo de rede Cat6 (caixa 305m)',    valor:420.00, cat:'Material de consumo', freq:14  },
+        { nome:'Conector RJ45 (pacote 100un)',      valor:55.00,  cat:'Peça / Reposição',    freq:10  },
+        { nome:'ONU Fiberhome AN5506',              valor:145.00, cat:'Equipamento',         freq:25  },
+        { nome:'Switch Gigabit 8 portas',           valor:230.00, cat:'Equipamento',         freq:45  },
+        { nome:'Alicate de crimpar RJ45',           valor:78.00,  cat:'Ferramenta',          freq:110 },
+        { nome:'Fonte chaveada 12V 2A',             valor:35.00,  cat:'Peça / Reposição',    freq:18  },
+        { nome:'Fita isolante 3M (rolo)',           valor:6.50,   cat:'Material de consumo', freq:7   },
+        { nome:'Abraçadeira nylon 200mm (pacote)',  valor:22.00,  cat:'Material de consumo', freq:12  },
+        { nome:'Caixa de emenda óptica CEO',        valor:95.00,  cat:'Peça / Reposição',    freq:30  },
+        { nome:'Splitter óptico 1x8',               valor:48.00,  cat:'Peça / Reposição',    freq:22  },
+        { nome:'Notebook Dell Inspiron 15',         valor:3200.00,cat:'Equipamento',         freq:180 },
+        { nome:'Parafusadeira Bosch GSR 12V',       valor:410.00, cat:'Ferramenta',          freq:150 },
+        { nome:'Cordão óptico SC/APC 3m',           valor:9.90,   cat:'Peça / Reposição',    freq:9   },
+        { nome:'Escada de fibra 6m',                valor:890.00, cat:'Equipamento',         freq:200 },
+        { nome:'Capacete de segurança',             valor:32.00,  cat:'Outro',               freq:60  },
+    ];
+    const linksDemo = ['https://exemplo.com/produto', ''];
+    const titPrefix = ['Compra de','Reposição de','Aquisição de','Pedido de','Estoque —'];
+
+    const mkItem = (p) => ({
+        nome: p.nome,
+        qtd:  p.valor > 500 ? rint(1, 3) : rint(1, 12),
+        valorUnit: Math.round(p.valor * (0.92 + rnd() * 0.16) * 100) / 100,
+        link: pick(linksDemo)
+    });
+
+    const mkAprov = (n, modo) => {
+        const escolhidos = [];
+        const usados = new Set();
+        while (escolhidos.length < n) {
+            const u = pick(users);
+            if (usados.has(u.uid)) continue;
+            usados.add(u.uid);
+            escolhidos.push(u);
+        }
+        return escolhidos.map((u, i) => {
+            let status = 'aprovado';
+            if (modo === 'reprovado')   status = i === 0 ? 'reprovado' : 'aprovado';
+            if (modo === 'pendente')    status = i === 0 ? 'pendente'  : (rnd() < 0.5 ? 'aprovado' : 'pendente');
+            return { uid: u.uid, nome: u.nome, email: u.email, status,
+                     comentario: status === 'reprovado' ? 'Fora do orçamento do mês' : '',
+                     em: status === 'pendente' ? '' : new Date().toISOString() };
+        });
+    };
+
+    const sols = [];
+    let idc = 0;
+    produtos.forEach(prod => {
+        // Mais recorrente (freq baixa) ⇒ mais pedidos ao longo de ~11 meses.
+        const nPedidos = Math.min(16, Math.max(2, Math.round(310 / prod.freq)));
+        let t = now - rint(3, 35) * DAY;              // último pedido recente
+        for (let k = 0; k < nPedidos; k++) {
+            if (t < now - 335 * DAY) break;
+            const data = new Date(t);
+            const u = pick(users);
+            const itens = [ mkItem(prod) ];
+            if (rnd() < 0.4) itens.push(mkItem(pick(produtos)));  // item extra ocasional
+
+            // Distribuição de status/aprovadores
+            const nAp = rint(1, 3);
+            const r = rnd();
+            let status = '', aprovadores;
+            if      (r < 0.15) { aprovadores = mkAprov(nAp, 'pendente');  status = ''; }
+            else if (r < 0.45) { aprovadores = mkAprov(nAp, 'aprovado');  status = ''; }
+            else if (r < 0.55) { aprovadores = mkAprov(nAp, 'reprovado'); status = ''; }
+            else if (r < 0.75) { aprovadores = mkAprov(nAp, 'aprovado');  status = 'comprada'; }
+            else if (r < 0.90) { aprovadores = mkAprov(nAp, 'aprovado');  status = 'recebida'; }
+            else               { aprovadores = mkAprov(nAp, 'aprovado');  status = 'cancelada'; }
+
+            sols.push({
+                id: 'demo-' + (idc++),
+                titulo: `${pick(titPrefix)} ${prod.nome}`,
+                categoria: prod.cat,
+                prioridade: pick(['baixa','media','media','media','alta','urgente']),
+                descricao: '',
+                itens,
+                aprovadores,
+                status,
+                criadoPorUid: u.uid,
+                criadoPorNome: u.nome,
+                criadoPor: u.email,
+                criadoEm: data,
+                _demo: true
+            });
+
+            t -= (prod.freq + rint(-3, 6)) * DAY;     // recua ~freq dias com ruído
+        }
+    });
+
+    return sols;
 }
 
 // ================================================================

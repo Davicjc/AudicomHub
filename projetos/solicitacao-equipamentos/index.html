@@ -47,6 +47,12 @@
                     <span>Visão Adm</span>
                     <span class="tab-count" id="countTodos">0</span>
                 </button>
+
+                <div class="nav-section-label">Análise</div>
+                <button class="tab-btn" data-tab="metricas" id="tabMetricas" onclick="trocarAba('metricas')">
+                    <span class="nav-icon"><i class="fas fa-chart-line"></i></span>
+                    <span>Relatórios &amp; Métricas</span>
+                </button>
             </nav>
 
             <div class="sidebar-footer">
@@ -75,23 +81,44 @@
                 <p id="pageSubtitle">Suas solicitações de equipamentos e produtos.</p>
             </div>
 
-            <div class="toolbar">
-                <div class="search-box">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="buscaInput" placeholder="Buscar por título, item ou solicitante…" oninput="renderLista()">
+            <!-- ── Área: Solicitações ──────────────────────────── -->
+            <div id="solicitacoesArea">
+                <div class="toolbar">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="buscaInput" placeholder="Buscar por título, item ou solicitante…" oninput="renderLista()">
+                    </div>
+                    <div class="filter-chips" id="filtroChips">
+                        <button class="filter-chip active" data-filtro="todos" onclick="setFiltro('todos')">Todos</button>
+                        <button class="filter-chip" data-filtro="pendente" onclick="setFiltro('pendente')">Pendentes</button>
+                        <button class="filter-chip" data-filtro="aprovada" onclick="setFiltro('aprovada')">Aprovadas</button>
+                        <button class="filter-chip" data-filtro="reprovada" onclick="setFiltro('reprovada')">Reprovadas</button>
+                        <button class="filter-chip" data-filtro="comprada" onclick="setFiltro('comprada')">Compradas</button>
+                        <button class="filter-chip" data-filtro="recebida" onclick="setFiltro('recebida')">Recebidas</button>
+                    </div>
                 </div>
-                <div class="filter-chips" id="filtroChips">
-                    <button class="filter-chip active" data-filtro="todos" onclick="setFiltro('todos')">Todos</button>
-                    <button class="filter-chip" data-filtro="pendente" onclick="setFiltro('pendente')">Pendentes</button>
-                    <button class="filter-chip" data-filtro="aprovada" onclick="setFiltro('aprovada')">Aprovadas</button>
-                    <button class="filter-chip" data-filtro="reprovada" onclick="setFiltro('reprovada')">Reprovadas</button>
-                    <button class="filter-chip" data-filtro="comprada" onclick="setFiltro('comprada')">Compradas</button>
-                    <button class="filter-chip" data-filtro="recebida" onclick="setFiltro('recebida')">Recebidas</button>
+
+                <div class="sol-grid" id="solGrid">
+                    <div class="loading-center"><i class="fas fa-circle-notch spin"></i></div>
                 </div>
             </div>
 
-            <div class="sol-grid" id="solGrid">
-                <div class="loading-center"><i class="fas fa-circle-notch spin"></i></div>
+            <!-- ── Área: Relatórios & Métricas ─────────────────── -->
+            <div id="metricasArea" style="display:none">
+                <div class="met-toolbar">
+                    <div class="met-scope" id="metScope"></div>
+                    <div class="met-period" id="metPeriodo">
+                        <span class="met-period-label"><i class="fas fa-calendar-day"></i> Período:</span>
+                        <button class="filter-chip" data-periodo="30" onclick="setPeriodoMetricas('30')">30 dias</button>
+                        <button class="filter-chip" data-periodo="90" onclick="setPeriodoMetricas('90')">90 dias</button>
+                        <button class="filter-chip" data-periodo="180" onclick="setPeriodoMetricas('180')">6 meses</button>
+                        <button class="filter-chip" data-periodo="365" onclick="setPeriodoMetricas('365')">12 meses</button>
+                        <button class="filter-chip active" data-periodo="all" onclick="setPeriodoMetricas('all')">Tudo</button>
+                        <button class="met-refresh" onclick="renderMetricas()" title="Atualizar"><i class="fas fa-rotate"></i></button>
+                        <button class="met-demo-btn" id="btnDemo" onclick="toggleMetricasDemo()"><i class="fas fa-flask"></i> Dados de exemplo</button>
+                    </div>
+                </div>
+                <div id="metricasBody"></div>
             </div>
         </main>
     </div>
@@ -149,6 +176,14 @@
 
             <div class="field">
                 <label>Itens (produto, quantidade, valor e link de compra)</label>
+                <div class="aviso-balao" onclick="abrirListaProdutos()">
+                    <span class="aviso-balao-icon"><i class="fas fa-magnifying-glass"></i></span>
+                    <div class="aviso-balao-txt">
+                        <b>Antes de cadastrar, confira o banco de produtos!</b>
+                        Veja se o item já existe em <u>“Lista de produtos”</u> e reaproveite-o em vez de criar um novo — assim as métricas e o histórico de pedidos ficam organizados.
+                    </div>
+                    <span class="aviso-balao-cta"><i class="fas fa-list"></i> Ver lista</span>
+                </div>
                 <div class="item-head">
                     <span>Produto</span><span>Qtd</span><span>Valor unit. (R$)</span><span class="h-link">Link de compra</span><span></span>
                 </div>
@@ -221,8 +256,16 @@
             <p style="font-size:12px;color:var(--text-3);margin:0 0 14px">Produtos deste catálogo aparecem como sugestão ao adicionar itens numa solicitação.</p>
 
             <div id="prodForm" style="display:none">
+                <div class="aviso-balao aviso-balao--warn">
+                    <span class="aviso-balao-icon"><i class="fas fa-triangle-exclamation"></i></span>
+                    <div class="aviso-balao-txt">
+                        <b>Evite duplicar!</b>
+                        Antes de cadastrar, verifique na lista abaixo se este produto <u>já não existe</u>. Produtos duplicados bagunçam as métricas de recorrência e o histórico de pedidos.
+                    </div>
+                </div>
+                <div id="prodDupAlerta"></div>
                 <div class="field-row">
-                    <div class="field" style="flex:2"><label>Nome do produto</label><input type="text" id="pNome" placeholder="Ex: Roteador TP-Link Archer C6"></div>
+                    <div class="field" style="flex:2"><label>Nome do produto</label><input type="text" id="pNome" placeholder="Ex: Roteador TP-Link Archer C6" oninput="checarProdutoDuplicado()"></div>
                     <div class="field" style="flex:1"><label>Valor ref. (R$)</label><input type="number" id="pValor" min="0" step="0.01" placeholder="0,00"></div>
                 </div>
                 <div class="field-row">
