@@ -43,8 +43,8 @@
                     <span class="tab-count" id="countMinhas">0</span>
                 </button>
                 <button class="tab-btn" data-tab="todos" id="tabTodos" onclick="trocarAba('todos')" style="display:none">
-                    <span class="nav-icon"><i class="fas fa-comments"></i></span>
-                    <span>Todos os Chats</span>
+                    <span class="nav-icon"><i class="fas fa-user-shield"></i></span>
+                    <span>Visão Adm</span>
                     <span class="tab-count" id="countTodos">0</span>
                 </button>
             </nav>
@@ -94,6 +94,16 @@
                 <div class="loading-center"><i class="fas fa-circle-notch spin"></i></div>
             </div>
         </main>
+    </div>
+
+    <!-- ── Botões flutuantes (FAB) ─────────────────────────── -->
+    <div class="fab-group" id="fabGroup">
+        <button class="fab fab-mini" id="fabProdutos" onclick="abrirModalProdutos()" style="display:none">
+            <i class="fas fa-box"></i><span class="fab-label">Produtos</span>
+        </button>
+        <button class="fab fab-main" id="fabNova" onclick="abrirModalNova()" style="display:none">
+            <i class="fas fa-plus"></i><span class="fab-label">Nova solicitação</span>
+        </button>
     </div>
 
     <!-- ── Modal: Nova / Editar Solicitação ────────────────── -->
@@ -268,11 +278,17 @@
 
             document.getElementById('appContent').style.display = 'flex';
 
-            if (window._can.criar) document.getElementById('btnNova').style.display = '';
+            if (window._can.criar) {
+                document.getElementById('btnNova').style.display = '';
+                document.getElementById('fabNova').style.display = '';
+            }
             if (window._can.moverLixeira || window._can.restaurar || window._can.apagarPermanente)
                 document.getElementById('btnLixeira').style.display = '';
             if (window._can.verTodos) document.getElementById('tabTodos').style.display = '';
-            if (window._can.gerenciarProdutos) document.getElementById('btnProdutos').style.display = '';
+            if (window._can.gerenciarProdutos) {
+                document.getElementById('btnProdutos').style.display = '';
+                document.getElementById('fabProdutos').style.display = '';
+            }
 
             iniciarApp();
         });

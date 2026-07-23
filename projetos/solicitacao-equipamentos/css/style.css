@@ -98,13 +98,14 @@ body {
     color: var(--primary-lt);
 }
 .tab-btn .nav-icon {
-    width: 30px; height: 30px; border-radius: 8px;
-    background: var(--surface-3); display: flex; align-items: center;
-    justify-content: center; font-size: 12px; flex-shrink: 0;
-    color: var(--text-3); transition: var(--ease);
+    flex: none;               /* não estica (a regra .tab-btn span tem flex:1) */
+    width: 12px; height: 12px; min-width: 12px; border-radius: 3px;
+    background: var(--surface-4);
+    transition: var(--ease);
 }
+.tab-btn .nav-icon i { display: none; }  /* só o quadradinho, sem ícone dentro */
 .tab-btn.active .nav-icon, .tab-btn:hover .nav-icon {
-    background: rgba(99,102,241,0.18); color: var(--primary-lt);
+    background: var(--primary-lt);
 }
 .tab-btn span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tab-btn .tab-count {
@@ -484,6 +485,35 @@ body {
 .loading-center { display: flex; align-items: center; justify-content: center; height: 50vh; color: var(--text-3); font-size: 22px; }
 
 /* ============================================================
+   BOTÕES FLUTUANTES (FAB)
+   ============================================================ */
+.fab-group {
+    position: fixed; right: 24px; bottom: 24px; z-index: 850;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 12px;
+}
+.fab {
+    display: inline-flex; align-items: center; gap: 10px; border: none; cursor: pointer;
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-weight: 600; letter-spacing: .01em; line-height: 1; border-radius: 999px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.45); transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+.fab:hover { transform: translateY(-2px); }
+.fab:active { transform: translateY(0); }
+.fab-main {
+    height: 58px; padding: 0 26px 0 22px; font-size: 15px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dk)); color: #fff;
+}
+.fab-main i { font-size: 18px; }
+.fab-main:hover { box-shadow: 0 16px 40px var(--primary-glow); }
+.fab-mini {
+    height: 46px; padding: 0 20px; font-size: 13px;
+    background: var(--surface-3); color: var(--text-1); border: 1px solid var(--border-md);
+}
+.fab-mini:hover { border-color: var(--border-hover); color: var(--primary-lt); }
+.fab-label { white-space: nowrap; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+
+/* ============================================================
    RESPONSIVO
    ============================================================ */
 @media (max-width: 1080px) {
@@ -565,6 +595,11 @@ body {
     .chat-btn-icon { width: 44px; height: 44px; }
     .msg { max-width: 90%; }
     .msg-anexo-img { max-width: 180px; }
+
+    /* FAB respeita a área segura e some quando um modal está aberto */
+    .fab-group { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); gap: 10px; }
+    .fab-main { height: 54px; padding: 0 22px 0 18px; }
+    .fab-mini { height: 44px; }
 }
 
 /* ── Celular pequeno ── */
@@ -579,6 +614,9 @@ body {
     /* Tabela de itens rola horizontalmente se precisar */
     .detail-block .itens-table { display: block; overflow-x: auto; white-space: nowrap; }
     .lixeira-btn-action { flex: 1 1 auto; justify-content: center; }
+    /* Em telas bem pequenas, o FAB secundário mostra só o ícone */
+    .fab-mini .fab-label { display: none; }
+    .fab-mini { padding: 0; width: 46px; justify-content: center; }
 }
 
 @media (prefers-reduced-motion: reduce) {

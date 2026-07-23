@@ -272,8 +272,8 @@ function trocarAba(aba) {
     const title = document.getElementById('pageTitle');
     const sub   = document.getElementById('pageSubtitle');
     if (aba === 'todos') {
-        title.textContent = 'Todos os Chats';
-        sub.textContent   = 'Todas as solicitações e seus chats (visão administrativa).';
+        title.textContent = 'Visão Adm';
+        sub.textContent   = 'Todas as solicitações e chats de todos os funcionarios — visão administrativa (somente leitura).';
     } else {
         title.textContent = 'Minhas Solicitações';
         sub.textContent   = 'Solicitações que você criou ou nas quais é aprovador.';
