@@ -491,7 +491,10 @@ function renderRondas(root) {
         <p>Registros de visitas técnicas realizadas.</p>
       </div>
       <div class="view-actions">
+        <input type="text" class="input" id="filtroBuscaRonda" placeholder="Buscar técnico ou local…" style="width:190px" oninput="renderListaRondas()">
+        <input type="date" class="input" id="filtroDataRonda" style="width:auto" onchange="renderListaRondas()" title="Filtrar por dia">
         <select class="input" id="filtroLocalRonda" style="width:auto" onchange="renderListaRondas()">${opcoesLocais}</select>
+        <button class="btn btn-sm" onclick="limparFiltrosRonda()" title="Limpar filtros"><i class="fas fa-eraser"></i></button>
         ${podeRegistrar ? `<button class="btn btn-primary" onclick="abrirFormRonda()"><i class="fas fa-plus"></i> Registrar ronda</button>` : ''}
       </div>
     </div>
@@ -504,9 +507,25 @@ function renderRondas(root) {
   renderListaRondas();
 }
 
+function limparFiltrosRonda() {
+  ['filtroBuscaRonda', 'filtroDataRonda', 'filtroLocalRonda'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderListaRondas();
+}
+
 function renderListaRondas() {
   const filtro = (document.getElementById('filtroLocalRonda') || {}).value || '';
-  const lista = _rondas.filter(r => !filtro || r.localId === filtro);
+  const filtroData = (document.getElementById('filtroDataRonda') || {}).value || '';
+  const busca = ((document.getElementById('filtroBuscaRonda') || {}).value || '').toLowerCase().trim();
+  const diaYMD = ms => { const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const lista = _rondas.filter(r => {
+    if (filtro && r.localId !== filtro) return false;
+    if (filtroData && diaYMD(tsMs(r.dataRonda)) !== filtroData) return false;
+    if (busca) {
+      const alvo = ((r.localNome || '') + ' ' + (r.tecnicoNome || '') + ' ' + (r.tecnicoEmail || '')).toLowerCase();
+      if (!alvo.includes(busca)) return false;
+    }
+    return true;
+  });
   const box = document.getElementById('listaRondas');
   const selbar = document.getElementById('rondaSelbar');
   if (!lista.length) {
@@ -610,141 +629,143 @@ function montarHTMLRelatorio(rondas, fotosPorRonda) {
   const geradoEm = new Date().toLocaleString('pt-BR');
   const esc = escapeHTML;
 
+  const LOGO_SVG = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="6" fill="#2563eb"/><path d="M12 5.4a3.4 3.4 0 0 0-3.4 3.4c0 2.4 3.4 6.2 3.4 6.2s3.4-3.8 3.4-6.2A3.4 3.4 0 0 0 12 5.4Zm0 4.7a1.3 1.3 0 1 1 0-2.6 1.3 1.3 0 0 1 0 2.6Z" fill="#fff"/></svg>';
+
   const datas = rondas.map(r => tsMs(r.dataRonda)).filter(Boolean).sort((a, b) => a - b);
   const periodo = datas.length ? `${formatarData(datas[0])} — ${formatarData(datas[datas.length - 1])}` : '—';
+  const totalCatracas = rondas.reduce((a, r) => a + (r.catracas || []).length, 0);
   const totalProblema = rondas.reduce((a, r) => a + (r.catracas || []).filter(c => c.estado === 'problema').length, 0);
   const totalPecas = rondas.reduce((a, r) => a + (r.pecasTrocadas || []).reduce((s, p) => s + (Number(p.quantidade) || 1), 0), 0);
 
-  const pill = (txt, cls) => `<span class="pill ${cls}">${esc(txt)}</span>`;
-  const thumb = f => `<figure class="ph"><img src="${f.base64}" alt="foto">${(f.secao || f.legenda) ? `<figcaption>${esc((f.secao || '') + (f.legenda ? ' · ' + f.legenda : ''))}</figcaption>` : ''}</figure>`;
-  const pecasTabela = (pecas) => `
-    <table class="pecas">
-      <thead><tr><th>Peça</th><th class="c">Qtd</th><th>Observação</th></tr></thead>
-      <tbody>${pecas.map(p => `<tr><td>${esc(p.produtoNome || '—')}</td><td class="c">${esc(String(p.quantidade || 1))}</td><td>${esc(p.obs || '')}</td></tr>`).join('')}</tbody>
-    </table>`;
+  const thumbs = (list) => list.map(f => `<img class="th" src="${f.base64}" title="${esc((f.secao || '') + (f.legenda ? ' · ' + f.legenda : ''))}" alt="">`).join('');
+  const pecasTxt = (arr) => arr.length ? arr.map(p => `${esc(p.produtoNome || '—')} <b>×${esc(String(p.quantidade || 1))}</b>${p.obs ? '<span class="pobs"> (' + esc(p.obs) + ')</span>' : ''}`).join('<br>') : '<span class="dim">—</span>';
 
-  const rondaSec = (r, i) => {
+  const ronda = (r) => {
     const fotos = fotosPorRonda[r.id] || [];
-    const fotosDe = cid => fotos.filter(f => (f.catracaId || null) === cid);
+    const fotosDaCatraca = cid => fotos.filter(f => (f.catracaId || null) === cid);
     const fotosGerais = fotos.filter(f => !f.catracaId);
     const cats = (r.catracas || []);
-    const catProblema = cats.filter(c => c.estado === 'problema').length;
-    const catracasHTML = cats.length ? cats.map(c => {
-      const pecas = Array.isArray(c.pecas) ? c.pecas : [];
-      const cf = fotosDe(c.catracaId);
-      return `
-        <div class="cat">
-          <div class="cat-h">
-            <span class="cat-n">${esc(c.nome)}</span>
-            ${c.estado === 'problema' ? pill('Problema', 'bad') : pill('OK', 'ok')}
-          </div>
-          ${c.obs ? `<div class="obs">${esc(c.obs)}</div>` : ''}
-          ${pecas.length ? `<div class="sub"><div class="sub-t">Peças trocadas</div>${pecasTabela(pecas)}</div>` : ''}
-          ${cf.length ? `<div class="sub"><div class="sub-t">Fotos da catraca</div><div class="grid">${cf.map(thumb).join('')}</div></div>` : ''}
-        </div>`;
-    }).join('') : '<div class="muted">Sem catracas registradas.</div>';
+    const lv = r.localVisto || {};
+    const prob = cats.filter(c => c.estado === 'problema').length;
+
+    const rows = cats.length ? cats.map(c => {
+      const cf = fotosDaCatraca(c.catracaId);
+      return `<tr>
+        <td class="td-nome">${esc(c.nome)}</td>
+        <td class="td-estado">${c.estado === 'problema' ? '<span class="b b-bad">Problema</span>' : '<span class="b b-ok">OK</span>'}</td>
+        <td>${pecasTxt(Array.isArray(c.pecas) ? c.pecas : [])}</td>
+        <td>${c.obs ? esc(c.obs) : '<span class="dim">—</span>'}</td>
+        <td class="td-fotos">${cf.length ? thumbs(cf) : '<span class="dim">—</span>'}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="5" class="dim">Sem catracas registradas.</td></tr>';
 
     const pecasSemCat = (r.pecasTrocadas || []).filter(p => !p.catracaId);
+    const infos = [];
+    infos.push(`<i>Local visto:</i> <b class="${lv.ok ? 'txt-ok' : 'txt-warn'}">${lv.ok ? 'OK' : 'Com ressalva'}</b>${lv.obs ? ' — ' + esc(lv.obs) : ''}`);
+    if (pecasSemCat.length) infos.push(`<i>Peças (sem catraca):</i> ${pecasTxt(pecasSemCat)}`);
+    if (r.demaisInfos) infos.push(`<i>Demais informações:</i> ${esc(r.demaisInfos)}`);
 
     return `
-      <section class="ronda ${i > 0 ? 'brk' : ''}">
-        <div class="r-head">
-          <div>
-            <div class="r-local">${esc(r.localNome || '—')}</div>
-            <div class="r-meta">${formatarData(r.dataRonda)} &nbsp;·&nbsp; ${formatarHora(r.horaInicio)} - ${formatarHora(r.horaTermino)} &nbsp;·&nbsp; <i>Técnico:</i> ${esc(r.tecnicoNome || r.tecnicoEmail || '—')}</div>
-          </div>
-          <div class="r-tags">${catProblema ? pill(catProblema + ' catraca(s) c/ problema', 'bad') : pill('Catracas OK', 'ok')}</div>
+      <section class="ronda">
+        <div class="rh">
+          <div class="rh-l"><b>${esc(r.localNome || '—')}</b> <span class="b ${prob ? 'b-bad' : 'b-ok'}">${prob ? prob + ' c/ problema' : 'Sem ocorrências'}</span></div>
+          <div class="rh-r">${esc(formatarData(r.dataRonda))} · ${esc(formatarHora(r.horaInicio))}–${esc(formatarHora(r.horaTermino))} · ${esc(r.tecnicoNome || r.tecnicoEmail || '—')}</div>
         </div>
-
-        <div class="cols">
-          <div class="info"><span class="info-k">Local visto:</span>${r.localVisto && r.localVisto.ok ? pill('OK', 'ok') : pill('Com ressalva', 'warn')}</div>
-        </div>
-        ${(r.localVisto && r.localVisto.obs) ? `<div class="obs">${esc(r.localVisto.obs)}</div>` : ''}
-
-        <h3 class="blk-t">Catracas</h3>
-        ${catracasHTML}
-        ${pecasSemCat.length ? `<h3 class="blk-t">Peças trocadas (sem catraca)</h3>${pecasTabela(pecasSemCat)}` : ''}
-        ${r.demaisInfos ? `<h3 class="blk-t">Demais informações</h3><div class="obs pre">${esc(r.demaisInfos)}</div>` : ''}
-        ${fotosGerais.length ? `<h3 class="blk-t">Fotos gerais</h3><div class="grid">${fotosGerais.map(thumb).join('')}</div>` : ''}
+        <div class="rsub">${infos.join('<span class="sep">|</span>')}</div>
+        <table class="gr">
+          <thead><tr><th style="width:24%">Catraca</th><th style="width:9%">Estado</th><th style="width:23%">Peças trocadas</th><th style="width:28%">Observação</th><th style="width:16%">Fotos</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${fotosGerais.length ? `<div class="gerais"><span class="gerais-t">Fotos gerais:</span> ${thumbs(fotosGerais)}</div>` : ''}
       </section>`;
   };
 
   const css = `
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif; color:#1f2937; font-size:12px; line-height:1.5; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    .muted { color:#6b7280; font-size:11px; }
-    .cover { padding:34px 40px 26px; border-bottom:3px solid #3b82f6; }
-    .brand { font-size:22px; font-weight:800; letter-spacing:.5px; color:#0f172a; }
-    .brand span { color:#3b82f6; font-weight:600; margin-left:5px; }
-    .cover h1 { font-size:26px; margin-top:18px; color:#0f172a; }
-    .cover-sub { font-size:14px; color:#3b82f6; font-weight:600; margin-top:2px; }
-    .cover-meta { display:flex; gap:28px; margin-top:22px; flex-wrap:wrap; }
-    .cover-meta > div { display:flex; flex-direction:column; }
-    .cover-meta span { font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; color:#6b7280; }
-    .cover-meta b { font-size:16px; color:#0f172a; margin-top:3px; font-weight:700; }
-    .cover-foot { margin-top:18px; font-size:10.5px; color:#9ca3af; }
-    .ronda { padding:24px 40px; }
-    .ronda.brk { break-before:page; }
-    .r-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; border-bottom:1px solid #e5e7eb; padding-bottom:12px; margin-bottom:14px; }
-    .r-local { font-size:17px; font-weight:700; color:#0f172a; }
-    .r-meta { font-size:11.5px; color:#6b7280; margin-top:3px; }
-    .r-meta i { font-style:normal; color:#9ca3af; }
-    .blk-t { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#3b82f6; font-weight:700; margin:16px 0 8px; }
-    .cols { display:flex; gap:26px; flex-wrap:wrap; }
-    .info { display:flex; align-items:center; gap:8px; }
-    .info-k { font-size:11.5px; color:#6b7280; }
-    .cat { border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; margin-bottom:10px; break-inside:avoid; }
-    .cat-h { display:flex; justify-content:space-between; align-items:center; gap:10px; }
-    .cat-n { font-weight:700; font-size:13px; color:#111827; }
-    .sub { margin-top:10px; }
-    .sub-t { font-size:9.5px; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; font-weight:700; margin-bottom:5px; }
-    .obs { font-size:11.5px; color:#374151; margin-top:6px; background:#f9fafb; border-left:3px solid #cbd5e1; padding:6px 10px; border-radius:0 6px 6px 0; }
-    .obs.pre { white-space:pre-wrap; }
-    .pill { display:inline-block; font-size:9.5px; font-weight:700; padding:2px 9px; border-radius:999px; }
-    .pill.ok { background:#dcfce7; color:#166534; }
-    .pill.bad { background:#fee2e2; color:#991b1b; }
-    .pill.warn { background:#fef3c7; color:#92400e; }
-    table.pecas { width:100%; border-collapse:collapse; font-size:11px; margin-top:2px; }
-    table.pecas th { text-align:left; background:#f3f4f6; color:#4b5563; font-weight:700; padding:6px 9px; font-size:9.5px; text-transform:uppercase; letter-spacing:.03em; }
-    table.pecas td { padding:6px 9px; border-bottom:1px solid #eef0f2; }
-    table.pecas .c { text-align:center; width:52px; }
-    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
-    .ph { border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; break-inside:avoid; background:#f9fafb; }
-    .ph img { width:100%; height:118px; object-fit:cover; display:block; }
-    .ph figcaption { font-size:9px; color:#6b7280; padding:4px 6px; text-transform:capitalize; }
-    .pg-foot { text-align:center; font-size:9.5px; color:#9ca3af; padding:16px 40px 26px; border-top:1px solid #e5e7eb; margin-top:12px; }
-    @page { size:A4; margin:14mm 0; }
-    @media print { .ronda,.cat,.ph { break-inside:avoid; } }`;
+    body { font-family:'Segoe UI',-apple-system,Roboto,Arial,sans-serif; color:#1f2937; font-size:9.5px; line-height:1.4; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .wrap { padding:11mm 11mm 9mm; }
+    .hd { display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:2px solid #2563eb; padding-bottom:9px; margin-bottom:9px; }
+    .hd-l { display:flex; align-items:center; gap:9px; }
+    .hd-name { font-size:14px; font-weight:800; color:#0f172a; }
+    .hd-name span { color:#2563eb; font-weight:600; }
+    .hd-name em { display:block; font-style:normal; font-size:9px; color:#64748b; font-weight:500; margin-top:1px; }
+    .hd-r { text-align:right; font-size:8.5px; color:#94a3b8; line-height:1.5; }
+    .hd-r b { color:#475569; }
+    .hd-r .ttl { font-size:11px; font-weight:800; color:#0f172a; text-transform:uppercase; letter-spacing:.04em; }
+    .summary { display:flex; gap:14px; flex-wrap:wrap; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:6px; padding:7px 12px; margin-bottom:12px; font-size:9.5px; color:#64748b; }
+    .summary b { color:#0f172a; font-size:11px; }
+    .summary .s-bad b { color:#b91c1c; }
+    /* Ronda + tabela */
+    .ronda { margin-bottom:14px; break-inside:avoid; }
+    .rh { display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; background:#1e293b; color:#fff; padding:6px 11px; border-radius:6px 6px 0 0; }
+    .rh-l { font-size:11.5px; } .rh-l b { font-weight:700; }
+    .rh-r { font-size:9px; color:#cbd5e1; }
+    .rsub { font-size:9px; color:#475569; background:#f8fafc; border:1px solid #e2e8f0; border-top:none; padding:5px 11px; }
+    .rsub i { color:#94a3b8; font-style:normal; font-weight:600; }
+    .rsub b { color:#0f172a; } .rsub .sep { color:#cbd5e1; margin:0 7px; }
+    .txt-ok { color:#16a34a; } .txt-warn { color:#b45309; }
+    table.gr { width:100%; border-collapse:collapse; font-size:9px; border:1px solid #cbd5e1; }
+    table.gr th { background:#eef2f7; color:#334155; text-align:left; padding:5px 8px; font-size:8px; text-transform:uppercase; letter-spacing:.03em; border:1px solid #cbd5e1; font-weight:700; }
+    table.gr td { padding:5px 8px; border:1px solid #e2e8f0; vertical-align:top; }
+    table.gr tbody tr:nth-child(even) td { background:#fafbfc; }
+    .td-nome { font-weight:600; color:#0f172a; }
+    .td-estado { text-align:center; white-space:nowrap; }
+    .td-fotos { white-space:nowrap; }
+    .b { display:inline-block; font-size:8px; font-weight:700; padding:1px 8px; border-radius:999px; white-space:nowrap; }
+    .b-ok { background:#dcfce7; color:#166534; } .b-bad { background:#fee2e2; color:#991b1b; }
+    .pobs { color:#94a3b8; } .dim { color:#cbd5e1; }
+    table.gr td b { color:#2563eb; }
+    .th { width:38px; height:30px; object-fit:cover; border:1px solid #d1d5db; border-radius:3px; margin:1px; display:inline-block; vertical-align:middle; }
+    .gerais { border:1px solid #e2e8f0; border-top:none; padding:6px 11px; background:#fafbfc; }
+    .gerais-t { font-size:8px; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; font-weight:700; vertical-align:middle; }
+    /* Assinaturas */
+    .assinaturas { display:flex; gap:44px; margin-top:26px; }
+    .ass { flex:1; text-align:center; font-size:9px; color:#6b7280; }
+    .ass-line { border-top:1px solid #94a3b8; margin-bottom:4px; }
+    .foot { text-align:center; font-size:8px; color:#9ca3af; margin-top:14px; padding-top:8px; border-top:1px solid #eef0f2; }
+    @media print { .ronda, table.gr tr { break-inside:avoid; } thead { display:table-header-group; } }
+    @page { size:A4; margin:0; }`;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <title>Relatório de Rondas — ${esc(projNome)}</title>
 <style>${css}</style></head>
 <body>
-  <header class="cover">
-    <div class="brand">AUDICOM<span>Telecom</span></div>
-    <h1>Relatório de Rondas</h1>
-    <div class="cover-sub">${esc(projNome)}</div>
-    <div class="cover-meta">
-      <div><span>Rondas</span><b>${rondas.length}</b></div>
-      <div><span>Período</span><b>${esc(periodo)}</b></div>
-      <div><span>Catracas c/ problema</span><b>${totalProblema}</b></div>
-      <div><span>Peças trocadas</span><b>${totalPecas}</b></div>
+  <div class="wrap">
+    <header class="hd">
+      <div class="hd-l">${LOGO_SVG}<div class="hd-name">AUDICOM<span> Tecnologia</span><em>${esc(projNome)}</em></div></div>
+      <div class="hd-r"><div class="ttl">Relatório de Rondas</div>Período: <b>${esc(periodo)}</b><br>Gerado em ${esc(geradoEm)}</div>
+    </header>
+
+    <div class="summary">
+      <span><b>${rondas.length}</b> ronda(s)</span>
+      <span><b>${totalCatracas}</b> catraca(s)</span>
+      <span class="${totalProblema ? 's-bad' : ''}"><b>${totalProblema}</b> com problema</span>
+      <span><b>${totalPecas}</b> peça(s) trocada(s)</span>
     </div>
-    <div class="cover-foot">Gerado em ${esc(geradoEm)}</div>
-  </header>
-  ${rondas.map(rondaSec).join('')}
-  <footer class="pg-foot">AUDICOM Telecom · Relatório de Rondas · ${esc(projNome)}</footer>
+
+    ${rondas.map(ronda).join('')}
+
+    <div class="assinaturas">
+      <div class="ass"><div class="ass-line"></div>Assinatura do técnico</div>
+      <div class="ass"><div class="ass-line"></div>Responsável pelo local</div>
+    </div>
+    <div class="foot">AUDICOM Tecnologia · ${esc(projNome)} · Documento gerado em ${esc(geradoEm)}</div>
+  </div>
   <script>
     window.addEventListener('load', function () {
       var imgs = Array.prototype.slice.call(document.images);
       Promise.all(imgs.map(function (img) {
         return img.complete ? Promise.resolve() : new Promise(function (res) { img.onload = img.onerror = res; });
-      })).then(function () { setTimeout(function () { window.print(); }, 250); });
+      })).then(function () { setTimeout(function () { window.print(); }, 300); });
     });
   <\/script>
 </body></html>`;
 }
+
+
+
+
 
 async function verRonda(id) {
   const r = _rondas.find(x => x.id === id);
