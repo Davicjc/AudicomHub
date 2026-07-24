@@ -81,6 +81,45 @@ service cloud.firestore {
       return isMembroAtivo() && meuDoc().get('rondaJundiaiCliente', false) == true;
     }
 
+    // ---------- catálogo de produtos/peças COMPARTILHADO entre rondas ----------
+    // Todas as rondas usam ronda-callink-produtos como fonte única.
+    function temAlgumaRonda() {
+      return temProjeto('ronda-callink') || temProjeto('ronda-linkcall')
+          || temProjeto('ronda-barueri') || temProjeto('ronda-jundiai');
+    }
+    function isClienteAlgumaRonda() {
+      return isClienteCallink() || isClienteLinkcall()
+          || isClienteBarueri() || isClienteJundiai();
+    }
+    function podeGerirProdutoCompart() {
+      return !isClienteAlgumaRonda() && (
+           pode('ronda-callink', 'gerenciarProdutos', false)
+        || pode('ronda-linkcall', 'gerenciarProdutos', false)
+        || pode('ronda-barueri', 'gerenciarProdutos', false)
+        || pode('ronda-jundiai', 'gerenciarProdutos', false)
+        || pode('ronda-callink', 'moverLixeira', true)
+        || pode('ronda-linkcall', 'moverLixeira', true)
+        || pode('ronda-barueri', 'moverLixeira', true)
+        || pode('ronda-jundiai', 'moverLixeira', true)
+        || pode('ronda-callink', 'restaurar', true)
+        || pode('ronda-linkcall', 'restaurar', true)
+        || pode('ronda-barueri', 'restaurar', true)
+        || pode('ronda-jundiai', 'restaurar', true)
+      );
+    }
+    function podeApagarProdutoCompart() {
+      return !isClienteAlgumaRonda() && (
+           pode('ronda-callink', 'gerenciarProdutos', false)
+        || pode('ronda-linkcall', 'gerenciarProdutos', false)
+        || pode('ronda-barueri', 'gerenciarProdutos', false)
+        || pode('ronda-jundiai', 'gerenciarProdutos', false)
+        || pode('ronda-callink', 'apagarPermanente', false)
+        || pode('ronda-linkcall', 'apagarPermanente', false)
+        || pode('ronda-barueri', 'apagarPermanente', false)
+        || pode('ronda-jundiai', 'apagarPermanente', false)
+      );
+    }
+
     function statusRonda(dados) {
       return dados.get('status', 'concluida');
     }
@@ -261,6 +300,36 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(campos);
     }
 
+    // ---------- criação de acesso de CLIENTE pela aba da ronda ----------
+    // Quem tem `gerenciarClientes` de uma ronda pode CRIAR contas de cliente
+    // direto na aba "Acessos de Clientes" (sem ser admin do hub). O doc é
+    // estritamente limitado p/ impedir escalonamento:
+    //   - role == 'user' (nunca admin), não bloqueado
+    //   - projects contém SOMENTE o projeto daquela ronda (== true)
+    //   - é cliente externo (somente leitura) do projeto
+    //   - sem `permissions` (nada de granular/escalonar)
+    function clienteRondaBase(d, proj) {
+      return d.get('role', 'user') == 'user'
+        && d.get('bloqueado', false) != true
+        && d.get('projects', {}).keys().hasOnly([proj])
+        && d.get('projects', {}).get(proj, false) == true
+        && !('permissions' in d);
+    }
+    function podeCriarClienteRonda(d) {
+      return (pode('ronda-callink', 'gerenciarClientes', false)
+              && d.get('rondaCallinkCliente', false) == true
+              && clienteRondaBase(d, 'ronda-callink'))
+        || (pode('ronda-linkcall', 'gerenciarClientes', false)
+              && d.get('rondaLinkcallCliente', false) == true
+              && clienteRondaBase(d, 'ronda-linkcall'))
+        || (pode('ronda-barueri', 'gerenciarClientes', false)
+              && d.get('rondaBarueriCliente', false) == true
+              && clienteRondaBase(d, 'ronda-barueri'))
+        || (pode('ronda-jundiai', 'gerenciarClientes', false)
+              && d.get('rondaJundiaiCliente', false) == true
+              && clienteRondaBase(d, 'ronda-jundiai'));
+    }
+
     // ================================================================
     // USERS — o ponto mais sensível para um sistema com clientes.
     // ================================================================
@@ -270,8 +339,11 @@ service cloud.firestore {
       // (o app lista técnicos/clientes e o painel admin lê a lista).
       allow read: if isAuth() && (request.auth.uid == uid || isMembroAtivo());
 
-      // Contas são criadas/excluídas apenas pelo admin (app secundário).
-      allow create, delete: if isAdmin();
+      // Contas são criadas pelo admin (app secundário) OU por quem tem
+      // gerenciarClientes de uma ronda (apenas doc de cliente limitado —
+      // ver podeCriarClienteRonda). Exclusão continua só admin.
+      allow create: if isAdmin() || podeCriarClienteRonda(request.resource.data);
+      allow delete: if isAdmin();
 
       allow update: if
         // admin gerencia role, permissions, projects, bloqueado, categoria...
@@ -414,6 +486,31 @@ service cloud.firestore {
     }
 
     // ================================================================
+    // FROTA DE VEÍCULOS (coleções top-level próprias)
+    //   Frota compartilhada: todo membro com o projeto lê veículos e
+    //   manutenções. Cadastrar veículo exige `gerenciarVeiculos`;
+    //   registrar manutenção exige `adicionar`. Editar/reordenar/mover
+    //   p/ lixeira = update (controle na UI). Apagar permanente fica na
+    //   coleção lixeira-frota-veiculos.
+    // ================================================================
+    match /frota-veiculos-carros/{id} {
+      allow read:           if temProjeto('frota-veiculos');
+      allow create:         if pode('frota-veiculos', 'gerenciarVeiculos', false);
+      allow update, delete: if temProjeto('frota-veiculos');
+    }
+    match /frota-veiculos-manutencoes/{id} {
+      allow read:           if temProjeto('frota-veiculos');
+      allow create:         if pode('frota-veiculos', 'adicionar', true);
+      allow update, delete: if temProjeto('frota-veiculos');
+    }
+    match /lixeira-frota-veiculos/{id} {
+      allow read:   if temProjeto('frota-veiculos');
+      allow create: if pode('frota-veiculos', 'moverLixeira', true);
+      allow update: if pode('frota-veiculos', 'restaurar', true);
+      allow delete: if pode('frota-veiculos', 'apagarPermanente', false);
+    }
+
+    // ================================================================
     // RONDA CALLINK (coleções top-level próprias)
     //   Cliente externo (rondaCallinkCliente) = SOMENTE LEITURA.
     // ================================================================
@@ -432,15 +529,14 @@ service cloud.firestore {
       allow create, update, delete : if !isClienteCallink()
                                      && pode('ronda-callink', 'gerenciarLocais', false);
     }
+    // Catálogo COMPARTILHADO por TODAS as rondas (fonte única de produtos/peças).
+    //   leitura: qualquer membro de qualquer ronda;
+    //   escrita: quem gerencia produtos (ou mexe na lixeira) em qualquer ronda,
+    //            nunca cliente externo.
     match /ronda-callink-produtos/{pid} {
-      allow read:          if temProjeto('ronda-callink');
-      allow create, update : if !isClienteCallink()
-                              && (pode('ronda-callink', 'gerenciarProdutos', false)
-                                  || pode('ronda-callink', 'moverLixeira', true)
-                                  || pode('ronda-callink', 'restaurar', true));
-      allow delete:        if !isClienteCallink()
-                              && (pode('ronda-callink', 'gerenciarProdutos', false)
-                                  || pode('ronda-callink', 'apagarPermanente', false));
+      allow read:           if temAlgumaRonda();
+      allow create, update: if podeGerirProdutoCompart();
+      allow delete:         if podeApagarProdutoCompart();
     }
     match /ronda-callink-rondas/{rid} {
       allow read:   if podeLerRondaCallink(resource.data);

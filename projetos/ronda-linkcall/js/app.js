@@ -6,7 +6,8 @@
 
 /* ── Referências de coleções ──────────────────────── */
 const COL_LOCAIS   = () => db.collection('ronda-linkcall-locais');
-const COL_PRODUTOS = () => db.collection('ronda-linkcall-produtos');
+// Catálogo de produtos/peças COMPARTILHADO entre todas as rondas (fonte: ronda-callink).
+const COL_PRODUTOS = () => db.collection('ronda-callink-produtos');
 const COL_RONDAS   = () => db.collection('ronda-linkcall-rondas');
 const COL_LIXEIRA  = () => db.collection('lixeira-ronda-linkcall');
 const COL_LOGS     = () => db.collection('ronda-linkcall-logs');
@@ -1606,6 +1607,9 @@ async function renderClientes(root) {
   root.innerHTML = `
     <div class="view-header">
       <div class="view-title"><h2><i class="fas fa-user-shield"></i> Acessos de Clientes</h2><p>Defina quais usuários são clientes (somente leitura) e a quais locais têm acesso.</p></div>
+      <div class="view-actions">
+        ${window._can.gerenciarClientes ? `<button class="btn btn-primary" onclick="abrirModalNovoCliente()"><i class="fas fa-user-plus"></i> Novo cliente</button>` : ''}
+      </div>
     </div>
     <div id="listaClientes"><div class="loading-inline">Carregando usuários…</div></div>`;
   try {
@@ -1646,6 +1650,70 @@ async function salvarCliente(uid) {
     registrarLog('cliente', 'Atualizou acesso de cliente', `Atualizou o acesso de cliente de ${nome}.`, { usuarioAlvoUid: uid, clienteExterno: ehCliente, locais: locais.length });
     mostrarNotificacao('Acesso do cliente atualizado.');
   } catch (e) { mostrarNotificacao('Erro: ' + e.message, 'erro'); }
+}
+
+/* ── Criar acesso de cliente direto na aba (app secundário) ──── */
+async function abrirModalNovoCliente() {
+  const locaisCheck = _locais.map(l => `<label class="checkline" style="font-size:13px"><input type="checkbox" class="novoCliLocal" value="${l.id}" checked> ${escapeHTML(l.nome)}</label>`).join('')
+    || '<span style="color:var(--muted)">Nenhum local cadastrado ainda.</span>';
+  abrirModal(`
+    <div class="modal-header"><h3><i class="fas fa-user-plus"></i> Novo cliente (criar acesso)</h3><button class="modal-close" onclick="fecharModal()">&times;</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="field-label">Nome *</label><input class="input" id="ncNome" placeholder="Nome do cliente"></div>
+      <div class="form-group"><label class="field-label">E-mail (login) *</label><input class="input" id="ncEmail" type="email" autocomplete="off" placeholder="cliente@exemplo.com"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="field-label">Senha *</label><input class="input" id="ncSenha" type="password" autocomplete="new-password" placeholder="mín. 6 caracteres"></div>
+        <div class="form-group"><label class="field-label">Repetir senha *</label><input class="input" id="ncSenha2" type="password" autocomplete="new-password"></div>
+      </div>
+      <div class="form-group"><label class="field-label">Locais visíveis para o cliente</label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin-top:6px">${locaisCheck}</div>
+      </div>
+      <p class="hint">O acesso é criado como <b>cliente externo (somente leitura)</b>, vinculado apenas a esta ronda e aos locais marcados.</p>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btn-primary" id="btnCriarCli" onclick="criarCliente()"><i class="fas fa-check"></i> Criar acesso</button></div>
+  `);
+}
+
+async function criarCliente() {
+  const nome = document.getElementById('ncNome').value.trim();
+  const email = document.getElementById('ncEmail').value.trim();
+  const senha = document.getElementById('ncSenha').value;
+  const senha2 = document.getElementById('ncSenha2').value;
+  if (!nome || !email) { mostrarNotificacao('Preencha nome e e-mail', 'erro'); return; }
+  if (senha.length < 6) { mostrarNotificacao('A senha deve ter ao menos 6 caracteres', 'erro'); return; }
+  if (senha !== senha2) { mostrarNotificacao('As senhas não coincidem', 'erro'); return; }
+  const locais = Array.from(document.querySelectorAll('.novoCliLocal:checked')).map(cb => cb.value);
+
+  const btn = document.getElementById('btnCriarCli');
+  btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Criando…';
+  let secondaryApp = null;
+  try {
+    // App secundário: cria a conta Auth sem deslogar o usuário atual.
+    secondaryApp = firebase.initializeApp(firebase.app().options, 'sec_' + Date.now());
+    const cred = await secondaryApp.auth().createUserWithEmailAndPassword(email, senha);
+    const uid = cred.user.uid;
+    // Doc gravado pela sessão atual (quem tem gerenciarClientes) — limitado nas rules.
+    await db.collection('users').doc(uid).set({
+      name: nome, email, role: 'user',
+      projects: { 'ronda-linkcall': true },
+      rondaLinkcallCliente: true,
+      rondaLinkcallLocais: locais,
+      criadoPor: window._userEmail || '',
+      criadoPorUid: window._userUid || '',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    await secondaryApp.auth().signOut();
+    await secondaryApp.delete(); secondaryApp = null;
+    registrarLog('cliente', 'Criou acesso de cliente', `Criou o acesso de cliente ${nome} (${email}).`, { clienteEmail: email, locais: locais.length });
+    mostrarNotificacao('Acesso de cliente criado com sucesso.');
+    fecharModal();
+    renderClientes(document.getElementById('viewRoot'));
+  } catch (e) {
+    if (secondaryApp) { try { await secondaryApp.delete(); } catch (_) {} }
+    const msgs = { 'auth/email-already-in-use': 'Este e-mail já está cadastrado.', 'auth/invalid-email': 'E-mail inválido.', 'auth/weak-password': 'Senha muito fraca (mín. 6 caracteres).' };
+    mostrarNotificacao(msgs[e.code] || ('Erro ao criar: ' + e.message), 'erro');
+    btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Criar acesso';
+  }
 }
 
 /* ================================================================

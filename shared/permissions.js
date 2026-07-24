@@ -97,6 +97,16 @@ const PERMISSOES_CATALOGO = {
   },
   'sistema-chamados': {
     hubsoftConsultar: { label: 'Consultar cliente na API HubSoft', default: false }
+  },
+  'frota-veiculos': {
+    visualizar:        { label: 'Visualizar frota e dashboard',    default: true  },
+    adicionar:         { label: 'Registrar manutenções',           default: true  },
+    gerenciarVeiculos: { label: 'Cadastrar/editar veículos',       default: false },
+    usarIA:            { label: 'Preencher plano com IA',          default: true  },
+    editar:            { label: 'Editar manutenções e planos',     default: false },
+    moverLixeira:      { label: 'Apagar: mover p/ lixeira',        default: true  },
+    restaurar:         { label: 'Restaurar da lixeira',            default: true  },
+    apagarPermanente:  { label: 'Apagar: permanentemente',         default: false, implica: ['moverLixeira'] }
   }
 };
 

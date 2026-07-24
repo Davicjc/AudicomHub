@@ -137,6 +137,16 @@
     .perm-cb-label input:disabled + span { opacity: .55; }
     .perm-none { font-size: 12px; color: var(--muted); font-style: italic; }
     .perms-hidden .perm-sub { display: none !important; }
+    .btn.is-adm-on { background: #22c55e; border-color: #22c55e; color: #fff; }
+    .btn.is-adm-on:hover { background: #1eae51; border-color: #1eae51; }
+    .perm-total-warning {
+      display: flex; gap: 10px; align-items: flex-start;
+      margin: 8px 0 4px; padding: 12px 14px;
+      background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.4);
+      border-radius: 10px; color: #fca5a5; font-size: 12.5px; line-height: 1.45;
+    }
+    .perm-total-warning i { color: #ef4444; font-size: 15px; margin-top: 1px; flex-shrink: 0; }
+    .perm-total-warning b { color: #fecaca; }
 
     /* ── Árvore de acessos (lista de usuários) ── */
     .acc-tree { display: flex; flex-direction: column; gap: 12px; }
@@ -394,8 +404,8 @@
       <div class="form-group mt-12">
         <label>Papel (role)</label>
         <select id="editUserRole" class="input">
-          <option value="user">Usuário (sem permissões de admin)</option>
-          <option value="admin">Admin</option>
+          <option value="user">Usuário (acesso só ao que for liberado abaixo)</option>
+          <option value="admin">Admin GLOBAL — acesso total a TODOS os sistemas</option>
           <!-- superadmin é irrevogável, não aparece como opção -->
         </select>
         <p class="text-muted text-sm mt-8" id="superAdminNote" style="display:none">
@@ -410,9 +420,11 @@
 
       <div class="form-group mt-16">
         <label id="permLabelEdit">Acesso aos projetos e permissões</label>
-        <p class="text-muted text-sm mt-4" id="permAccessTotalNote" style="display:none">
-          <i class="fas fa-check-double"></i> Acesso total — admins têm todas as permissões em todos os projetos.
-        </p>
+        <div class="perm-total-warning" id="permAccessTotalNote" style="display:none">
+          <i class="fas fa-triangle-exclamation"></i>
+          <span><b>Papel ADMIN GLOBAL.</b> Este usuário tem <b>acesso total a TODOS os sistemas</b> do hub (inclui o painel Admin e apagar em definitivo) — as permissões abaixo são ignoradas.<br>
+          Para dar acesso <b>só a um sistema</b> (ex.: uma ronda), volte para <b>“Usuário”</b> e use o botão <b>“Adm”</b> do projeto.</span>
+        </div>
         <div class="proj-access-grid" id="projAccessGrid"></div>
       </div>
 
@@ -439,8 +451,8 @@
         <div class="form-group">
           <label>Papel (role)</label>
           <select id="newUserRole" class="input">
-            <option value="user">Usuário</option>
-            <option value="admin">Admin</option>
+            <option value="user">Usuário (acesso só ao que for liberado)</option>
+            <option value="admin">Admin GLOBAL — acesso total a TODOS os sistemas</option>
           </select>
         </div>
       </div>
@@ -480,9 +492,11 @@
 
       <div class="form-group mt-16">
         <label id="permLabelNew">Acesso aos projetos e permissões</label>
-        <p class="text-muted text-sm mt-4" id="permAccessTotalNoteNew" style="display:none">
-          <i class="fas fa-check-double"></i> Acesso total — admins têm todas as permissões em todos os projetos.
-        </p>
+        <div class="perm-total-warning" id="permAccessTotalNoteNew" style="display:none">
+          <i class="fas fa-triangle-exclamation"></i>
+          <span><b>Papel ADMIN GLOBAL.</b> Este usuário terá <b>acesso total a TODOS os sistemas</b> do hub (inclui o painel Admin e apagar em definitivo) — as permissões abaixo são ignoradas.<br>
+          Para dar acesso <b>só a um sistema</b> (ex.: uma ronda), escolha <b>“Usuário”</b> e use o botão <b>“Adm”</b> do projeto.</span>
+        </div>
         <div class="proj-access-grid" id="newUserProjGrid"></div>
       </div>
 
@@ -1027,6 +1041,7 @@
         const perms = resolverPermissoes({ ...u, role: 'user' }, p.id);
         grid.innerHTML += renderChipComPermissoes(p, perms, acesso, 'chip', 'proj');
       });
+      atualizarTodosBotoesAdm('projAccessGrid');
 
       const roleSelect = document.getElementById('editUserRole');
       roleSelect.onchange = () => atualizarModoPermissoes('editUserRole', 'projAccessGrid', 'permAccessTotalNote', 'permLabelEdit');
@@ -1050,12 +1065,18 @@
 
       let permsHTML;
       if (chaves.length) {
-        permsHTML = chaves.map(k => {
+        const toolbar = chaves.includes('apagarPermanente')
+          ? `<div class="perm-toolbar" style="grid-column:1/-1;display:flex;gap:6px;margin-bottom:2px">
+               <button type="button" id="admBtn-${panelId}" class="btn btn-ghost btn-sm" onclick="presetAdmPerms('${panelId}')" title="Tornar ADM deste sistema (tudo, exceto apagar em definitivo)">
+                 <i class="fas fa-user-shield"></i> Adm
+               </button>
+             </div>`
+          : '';
+        permsHTML = toolbar + chaves.map(k => {
           const marcado = !!perms[k];
           const travado = k === 'moverLixeira' && perms.apagarPermanente; // permanente implica mover
-          const onchange = k === 'apagarPermanente' ? ` onchange="onPermApagarChange(this, '${panelId}')"` : '';
           return `<label class="perm-cb-label">
-              <input type="checkbox" class="perm-cb" data-proj="${p.id}" data-perm="${k}" ${marcado ? 'checked' : ''} ${travado ? 'disabled' : ''}${onchange}>
+              <input type="checkbox" class="perm-cb" data-proj="${p.id}" data-perm="${k}" ${marcado ? 'checked' : ''} ${travado ? 'disabled' : ''} onchange="onAnyPermChange(this, '${panelId}')">
               <span>${cat[k].label}</span>
             </label>`;
         }).join('');
@@ -1086,6 +1107,52 @@
       if (!mover) return;
       if (cb.checked) { mover.checked = true; mover.disabled = true; }
       else { mover.disabled = false; }
+    }
+
+    // Preset "Adm do sistema": marca TODAS as permissões deste projeto,
+    // EXCETO "apagar permanentemente". Concede poder de admin dentro do
+    // sistema (ex.: rondas) sem virar admin do hub e sem apagar definitivo.
+    function presetAdmPerms(panelId) {
+      const scope = document.getElementById(panelId);
+      if (!scope) return;
+      scope.querySelectorAll('.perm-cb').forEach(cb => {
+        if (cb.dataset.perm === 'apagarPermanente') { cb.checked = false; cb.disabled = false; }
+        else { cb.checked = true; cb.disabled = false; }
+      });
+      atualizarBotaoAdm(panelId);
+    }
+
+    // "É Adm do sistema" = todas as permissões marcadas, EXCETO apagar definitivo.
+    function ehEstadoAdm(panelId) {
+      const scope = document.getElementById(panelId);
+      if (!scope) return false;
+      const cbs = Array.from(scope.querySelectorAll('.perm-cb'));
+      if (!cbs.length) return false;
+      return cbs.every(cb => cb.dataset.perm === 'apagarPermanente' ? !cb.checked : cb.checked);
+    }
+    // Reflete no botão se a pessoa está (ou não) como Adm daquele sistema.
+    function atualizarBotaoAdm(panelId) {
+      const btn = document.getElementById('admBtn-' + panelId);
+      if (!btn) return;
+      const on = ehEstadoAdm(panelId);
+      btn.classList.toggle('is-adm-on', on);
+      btn.innerHTML = on
+        ? '<i class="fas fa-user-shield"></i> É Adm ✓'
+        : '<i class="fas fa-user-shield"></i> Adm';
+      btn.title = on
+        ? 'Esta pessoa é ADM deste sistema (tudo, exceto apagar em definitivo). Clique para reaplicar.'
+        : 'Tornar ADM deste sistema (tudo, exceto apagar em definitivo)';
+    }
+    function atualizarTodosBotoesAdm(gridId) {
+      document.querySelectorAll(`#${gridId} [id^="admBtn-"]`).forEach(btn => {
+        atualizarBotaoAdm(btn.id.slice('admBtn-'.length));
+      });
+    }
+    // Handler único dos checkboxes: mantém a regra do "apagar permanente"
+    // e atualiza o indicador do botão Adm em tempo real.
+    function onAnyPermChange(cb, panelId) {
+      if (cb.dataset.perm === 'apagarPermanente') onPermApagarChange(cb, panelId);
+      atualizarBotaoAdm(panelId);
     }
 
     // Role admin/superadmin → esconde a seção de acesso/permissões e mostra só "Acesso total"
@@ -1144,16 +1211,23 @@
         grid.innerHTML = '<span class="perm-none">Sem permissões granulares — conceder acesso libera tudo neste sistema.</span>';
         return;
       }
-      grid.innerHTML = chaves.map(k => {
+      const toolbar = chaves.includes('apagarPermanente')
+        ? `<div class="perm-toolbar" style="grid-column:1/-1;display:flex;gap:6px;margin-bottom:2px">
+             <button type="button" id="admBtn-massaPermGrid" class="btn btn-ghost btn-sm" onclick="presetAdmPerms('massaPermGrid')" title="Tornar ADM deste sistema (tudo, exceto apagar em definitivo)">
+               <i class="fas fa-user-shield"></i> Adm
+             </button>
+           </div>`
+        : '';
+      grid.innerHTML = toolbar + chaves.map(k => {
         const def = !!cat[k].default;
-        const onchange = k === 'apagarPermanente' ? ` onchange="onPermApagarChange(this, 'massaPermGrid')"` : '';
         return `<label class="perm-cb-label">
-            <input type="checkbox" class="perm-cb" data-proj="${projId}" data-perm="${k}" ${def ? 'checked' : ''}${onchange}>
+            <input type="checkbox" class="perm-cb" data-proj="${projId}" data-perm="${k}" ${def ? 'checked' : ''} onchange="onAnyPermChange(this, 'massaPermGrid')">
             <span>${cat[k].label}</span>
           </label>`;
       }).join('');
       const ap = grid.querySelector('.perm-cb[data-perm="apagarPermanente"]');
       if (ap && ap.checked) onPermApagarChange(ap, 'massaPermGrid');
+      atualizarBotaoAdm('massaPermGrid');
     }
 
     function renderMassaAlvo() {
@@ -1635,6 +1709,7 @@
         const perms = resolverPermissoes({ role: 'user' }, p.id);
         grid.innerHTML += renderChipComPermissoes(p, perms, false, 'nchip', 'newproj');
       });
+      atualizarTodosBotoesAdm('newUserProjGrid');
 
       roleSelect.onchange = () => atualizarModoPermissoes('newUserRole', 'newUserProjGrid', 'permAccessTotalNoteNew', 'permLabelNew');
       atualizarModoPermissoes('newUserRole', 'newUserProjGrid', 'permAccessTotalNoteNew', 'permLabelNew');
