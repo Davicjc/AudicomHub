@@ -17,7 +17,8 @@ Portal interno da Audicom Telecom para gerenciamento de projetos e suporte técn
 | `sistema-chamados` | Gerenciamento de chamados |
 | `solicitação-manuntenções` | Solicitações de manutenção |
 | `ronda-callink` | Registro de rondas técnicas da operação Callink |
-| `ronda-linkcall` | Registro de rondas técnicas da operação Linkcall |
+| `ronda-barueri` | Registro de rondas técnicas — Callink Barueri |
+| `ronda-jundiai` | Registro de rondas técnicas — Callink Jundiaí |
 
 ## Estrutura de arquivos
 
@@ -40,7 +41,7 @@ firebase.rules          → Regras de segurança do Firestore
 
 ## Fluxo de rondas
 
-Os projetos `ronda-callink` e `ronda-linkcall` usam coleções Firestore próprias, com o mesmo modelo de preenchimento e segurança.
+Os projetos de ronda (`ronda-callink`, `ronda-barueri`, `ronda-jundiai`) usam coleções Firestore próprias, com o mesmo modelo de preenchimento e segurança. `ronda-callink` é a base mais atualizada.
 
 ### Rascunho e autosave
 
