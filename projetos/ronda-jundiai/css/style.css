@@ -27,6 +27,9 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Evita zoom por toque-duplo no mobile (mantém pinch e rolagem). */
+html { touch-action: manipulation; }
+
 body {
   font-family: 'Barlow', system-ui, sans-serif;
   background: var(--bg);
