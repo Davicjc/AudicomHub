@@ -1366,7 +1366,7 @@ function renderLocais(root) {
   root.innerHTML = `
     <div class="view-header">
       <div class="view-title"><h2><i class="fas fa-building"></i> Locais</h2><p>Locais atendidos e suas catracas.</p></div>
-      <div class="view-actions"><button class="btn btn-primary" onclick="abrirFormLocal()"><i class="fas fa-plus"></i> Novo local</button></div>
+      <div class="view-actions"><button class="btn" onclick="gerarQrCodesCatracas()"><i class="fas fa-qrcode"></i> Gerar QR Codes</button><button class="btn btn-primary" onclick="abrirFormLocal()"><i class="fas fa-plus"></i> Novo local</button></div>
     </div>
     <div class="list" id="listaLocais"></div>`;
   const box = document.getElementById('listaLocais');
@@ -1384,6 +1384,63 @@ function renderLocais(root) {
         ${window._can.moverLixeira ? `<button class="btn btn-sm btn-danger" onclick="moverLocalLixeira('${l.id}')"><i class="fas fa-trash"></i></button>` : ''}
       </div>
     </div>`).join('');
+}
+
+async function gerarQrCodesCatracas() {
+  if (typeof qrcode !== 'function') { mostrarNotificacao('Biblioteca de QR não carregada. Recarregue a página.', 'erro'); return; }
+  if (!_locais.length) { mostrarNotificacao('Nenhum local cadastrado.', 'erro'); return; }
+  mostrarNotificacao('Gerando QR codes…');
+  try {
+    const grupos = await Promise.all(_locais.map(async l => {
+      const snap = await SUB_CATRACAS(l.id).get();
+      const cats = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.ativa !== false);
+      return { local: l, catracas: cats };
+    }));
+    const comCatracas = grupos.filter(g => g.catracas.length);
+    if (!comCatracas.length) { mostrarNotificacao('Nenhuma catraca cadastrada nos locais.', 'erro'); return; }
+
+    const svgDe = (texto) => {
+      const qr = qrcode(0, 'M');
+      qr.addData(texto);
+      qr.make();
+      return qr.createSvgTag({ cellSize: 4, margin: 1, scalable: true });
+    };
+
+    const cards = comCatracas.flatMap(g => g.catracas.map(c => `<div class="qr-card">
+          <div class="qr-img">${svgDe(g.local.nome + ' — ' + c.nome)}</div>
+          <div class="qr-num">${escapeHTML(c.nome)}</div>
+          <div class="qr-aviso">NÃO REMOVA</div>
+        </div>`)).join('');
+
+    const html = `<!DOCTYPE html><html lang="pt-br"><head><meta charset="utf-8">
+      <title>QR Codes das Catracas</title>
+      <style>
+        @page { size: A4; margin: 10mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
+        .qr-local { margin: 0 0 8px; break-inside: avoid; }
+        .qr-local h2 { font-size: 11px; margin: 0 0 4px; border-bottom: 1px solid #111; padding-bottom: 2px; }
+        .qr-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+        .qr-card { border: 1px solid #999; border-radius: 4px; padding: 4px 3px; text-align: center; break-inside: avoid; }
+        .qr-img svg { width: 100%; height: auto; display: block; }
+        .qr-num { font-size: 8px; font-weight: 700; margin-top: 3px; line-height: 1.1; word-break: break-word; }
+        .qr-aviso { font-size: 7px; font-weight: 800; letter-spacing: .3px; color: #c00; margin-top: 1px; }
+        @media screen { body { background: #f0f0f0; padding: 16px; } .sheet { background: #fff; max-width: 210mm; margin: 0 auto; padding: 10mm; box-shadow: 0 2px 10px rgba(0,0,0,.15); } .toolbar { text-align: center; margin-bottom: 12px; } .toolbar button { padding: 8px 18px; font-size: 14px; cursor: pointer; } }
+        @media print { .toolbar { display: none; } .sheet { box-shadow: none; padding: 0; max-width: none; } }
+      </style></head>
+      <body>
+        <div class="toolbar"><button onclick="window.print()">Imprimir</button></div>
+        <div class="sheet"><div class="qr-grid">${cards}</div></div>
+      </body></html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) { mostrarNotificacao('Permita pop-ups para gerar os QR codes.', 'erro'); return; }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  } catch (e) {
+    mostrarNotificacao('Erro ao gerar QR codes: ' + e.message, 'erro');
+  }
 }
 
 function abrirFormLocal(id = null) {
