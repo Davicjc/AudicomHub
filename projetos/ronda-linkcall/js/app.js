@@ -913,20 +913,60 @@ function tickScan() {
     try {
       const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-      if (code && code.data) onQrLido(code.data);
+      if (code) { const txt = _lerTextoQr(code); if (txt) onQrLido(txt); }
     } catch (e) { /* frame não pronto */ }
   }
   _scan.rafId = requestAnimationFrame(tickScan);
 }
 
+// Conteúdo do QR: só ASCII (sem acento) — evita corrupção de encoding no leitor.
+function _asciiRonda(s) {
+  return String(s == null ? '' : s)
+    .replace(/[‐-―−]/g, '-')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^ -~]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+// Normalização para comparar (tolerante a acento, caixa, traço e espaços).
+function _normRonda(s) {
+  return _asciiRonda(s).replace(/\s*-\s*/g, ' - ').toLowerCase();
+}
+
+// Lê o texto do QR pelos bytes crus (UTF-8), evitando mojibake do jsQR.
+function _lerTextoQr(code) {
+  try {
+    if (code.binaryData && code.binaryData.length && typeof TextDecoder === 'function') {
+      const s = new TextDecoder('utf-8').decode(new Uint8Array(code.binaryData));
+      if (s) return s;
+    }
+  } catch (e) { /* usa fallback abaixo */ }
+  return code.data || '';
+}
+
+// Chave só com letras/números (ignora espaços, traços, acentos).
+function _soLetrasNums(s) { return _asciiRonda(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
 function matchCatracaQr(texto) {
-  const t = String(texto || '').trim();
+  const t = _normRonda(texto);
+  // Regra principal: a catraca é SEMPRE um número e vem por último;
+  // o que vem antes é o piso/local. (Ex.: "Terreo Bloco A 03" → piso "Terreo Bloco A", catraca 3.)
+  const mnum = t.match(/(\d+)\s*$/);
+  if (mnum) {
+    const catNum = String(parseInt(mnum[1], 10));
+    const pisoKey = _soLetrasNums(t.slice(0, mnum.index));
+    for (const local of _locais) {
+      if (_soLetrasNums(local.nome) !== pisoKey) continue;
+      const cats = (_scan && _scan.catracasPorLocal[local.id]) || [];
+      const catraca = cats.find(c => { const d = String(c.nome).replace(/\D/g, ''); return d && String(parseInt(d, 10)) === catNum; });
+      if (catraca) return { local, catraca };
+    }
+  }
+  // Fallback: separador + nome completo da catraca (caso não seja só número).
   for (const local of _locais) {
-    const prefixo = local.nome + ' — ';
+    const prefixo = _normRonda(local.nome) + ' - ';
     if (t.startsWith(prefixo)) {
       const nomeCat = t.slice(prefixo.length).trim();
       const cats = (_scan && _scan.catracasPorLocal[local.id]) || [];
-      const catraca = cats.find(c => String(c.nome).trim() === nomeCat);
+      const catraca = cats.find(c => _normRonda(c.nome) === nomeCat);
       if (catraca) return { local, catraca };
     }
   }
@@ -1917,7 +1957,7 @@ async function gerarQrCodesCatracas() {
     };
 
     const cards = comCatracas.flatMap(g => g.catracas.map(c => `<div class="qr-card">
-          <div class="qr-img">${svgDe(g.local.nome + ' — ' + c.nome)}</div>
+          <div class="qr-img">${svgDe(_asciiRonda(g.local.nome) + ' - ' + _asciiRonda(c.nome))}</div>
           <div class="qr-num">${escapeHTML(c.nome)}</div>
           <div class="qr-aviso">NÃO REMOVA</div>
         </div>`)).join('');
@@ -2026,7 +2066,7 @@ async function gerenciarCatracas(localId) {
       <div class="ronda-block" style="margin-top:14px">
         <div class="rb-title"><i class="fas fa-plus"></i> Adicionar catraca</div>
         <div class="form-row">
-          <div class="form-group"><label class="field-label">Nome / identificação *</label><input class="input" id="cNome" placeholder="Ex.: Catraca 01"></div>
+          <div class="form-group"><label class="field-label">Número da catraca *</label><input class="input" id="cNome" type="text" inputmode="numeric" pattern="\d*" maxlength="6" placeholder="Ex.: 01" oninput="this.value=this.value.replace(/\D/g,'')"><small style="color:var(--muted);font-size:11px">Apenas número, sem espaço (usado no QR da ronda).</small></div>
           <div class="form-group"><label class="field-label">Tipo</label><input class="input" id="cTipo" placeholder="Ex.: Torniquete"></div>
         </div>
         <button class="btn btn-primary btn-sm" onclick="addCatraca('${localId}')"><i class="fas fa-plus"></i> Adicionar</button>
@@ -2049,8 +2089,8 @@ async function listarCatracas(localId) {
 }
 
 async function addCatraca(localId) {
-  const nome = document.getElementById('cNome').value.trim();
-  if (!nome) return mostrarNotificacao('Informe o nome da catraca.', 'erro');
+  const nome = document.getElementById('cNome').value.replace(/\D/g, '');
+  if (!nome) return mostrarNotificacao('Informe o número da catraca (apenas números, sem espaço).', 'erro');
   try {
     const local = _locais.find(l => l.id === localId);
     const ref = await SUB_CATRACAS(localId).add({ nome, tipo: document.getElementById('cTipo').value.trim(), ativa: true, criadoPor: window._userEmail || '', criadoEm: firebase.firestore.FieldValue.serverTimestamp() });

@@ -6,7 +6,6 @@
 
 /* ── Referências de coleções ──────────────────────── */
 const COL_LOCAIS   = () => db.collection('ronda-barueri-locais');
-// Catálogo de produtos/peças COMPARTILHADO entre todas as rondas (fonte: ronda-callink).
 const COL_PRODUTOS = () => db.collection('ronda-callink-produtos');
 const COL_RONDAS   = () => db.collection('ronda-barueri-rondas');
 const COL_LIXEIRA  = () => db.collection('lixeira-ronda-barueri');
@@ -496,7 +495,7 @@ function renderRondas(root) {
         <input type="date" class="input" id="filtroDataRonda" style="width:auto" onchange="renderListaRondas()" title="Filtrar por dia">
         <select class="input" id="filtroLocalRonda" style="width:auto" onchange="renderListaRondas()">${opcoesLocais}</select>
         <button class="btn btn-sm" onclick="limparFiltrosRonda()" title="Limpar filtros"><i class="fas fa-eraser"></i></button>
-        ${podeRegistrar ? `<button class="btn btn-primary" onclick="abrirFormRonda()"><i class="fas fa-plus"></i> Registrar ronda</button>` : ''}
+        ${podeRegistrar ? `<button class="btn btn-primary" onclick="iniciarRondaScan()"><i class="fas fa-qrcode"></i> Iniciar ronda</button>` : ''}
       </div>
     </div>
     <div class="ronda-selbar" id="rondaSelbar" style="display:none">
@@ -560,7 +559,7 @@ function renderListaRondas() {
         </div>
         <div class="lr-actions">
           <button class="btn btn-sm" onclick="verRonda('${r.id}')"><i class="fas fa-eye"></i> Ver</button>
-          ${podeEditarRonda(r) ? `<button class="btn btn-sm" onclick="abrirFormRonda('${r.id}')"><i class="fas fa-pen"></i> ${concluida ? '' : 'Continuar'}</button>` : ''}
+          ${podeEditarRonda(r) ? `<button class="btn btn-sm" onclick="editarRonda('${r.id}')"><i class="fas fa-pen"></i> ${concluida ? '' : 'Continuar'}</button>` : ''}
           ${podeLixeira ? `<button class="btn btn-sm btn-danger" onclick="moverRondaLixeira('${r.id}')"><i class="fas fa-trash"></i></button>` : ''}
         </div>
       </div>`;
@@ -833,6 +832,556 @@ async function verRonda(id) {
 }
 
 /* ── Formulário de ronda (registrar / editar) ─────── */
+/* ================================================================
+   RONDA POR LEITURA DE QR (câmera) — fluxo novo
+   ================================================================ */
+let _scan = null;      // sessão de leitura ativa
+let _catModal = null;  // estado do modal de catraca aberto
+
+function rondaDoDiaLocal(localId) {
+  const hoje = hojeInput();
+  const diaYMD = ms => { const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  return _rondas.find(r => r.localId === localId && !r.deletado && diaYMD(tsMs(r.dataRonda)) === hoje);
+}
+
+function catracaJaRegistradaHoje(localId, catracaId) {
+  const r = rondaDoDiaLocal(localId);
+  return !!(r && (r.catracas || []).some(c => c.catracaId === catracaId));
+}
+
+async function iniciarRondaScan() {
+  if (window._isClienteExterno || !window._can.registrarRonda) { mostrarNotificacao('Sem permissão para registrar ronda.', 'erro'); return; }
+  if (!_locais.length) { mostrarNotificacao('Cadastre ao menos um local antes.', 'erro'); return; }
+  if (typeof jsQR !== 'function') { mostrarNotificacao('Leitor de QR não carregado. Recarregue a página.', 'erro'); return; }
+  mostrarNotificacao('Preparando câmera…');
+  const mapa = {};
+  try {
+    await Promise.all(_locais.map(async l => {
+      const snap = await SUB_CATRACAS(l.id).get();
+      mapa[l.id] = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.ativa !== false);
+    }));
+  } catch (e) { mostrarNotificacao('Erro ao carregar catracas: ' + e.message, 'erro'); return; }
+  _scan = { ativo: true, pausado: false, sessao: new Map(), catracasPorLocal: mapa, stream: null, rafId: null, cooldownUntil: 0, ultimoAviso: null };
+
+  const ov = document.createElement('div');
+  ov.id = 'scanOverlay';
+  ov.className = 'scan-overlay';
+  ov.innerHTML = `
+    <video id="scanVideo" playsinline muted></video>
+    <canvas id="scanCanvas" style="display:none"></canvas>
+    <div class="scan-frame"></div>
+    <div class="scan-top"><div class="scan-hint" id="scanHint"><i class="fas fa-qrcode"></i> Aponte para o QR da catraca</div></div>
+    <button type="button" class="scan-faltam" id="scanFaltam" onclick="toggleFaltamPanel()"><i class="fas fa-list-check"></i> Faltam <b id="scanFaltamNum">0</b></button>
+    <div class="scan-faltam-panel" id="faltamPanel">
+      <div class="fp-head"><b><i class="fas fa-list-check"></i> Faltam hoje</b><button type="button" onclick="toggleFaltamPanel()">&times;</button></div>
+      <div class="fp-body"></div>
+    </div>
+    <div class="scan-bottom">
+      <div class="scan-count" id="scanCount">0 catraca(s) nesta sessão</div>
+      <div class="scan-actions">
+        <button class="btn scan-btn" onclick="scanManual()"><i class="fas fa-keyboard"></i> Sem QR code</button>
+        <button class="btn btn-primary scan-btn" onclick="encerrarRondaScan()"><i class="fas fa-check"></i> Encerrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  atualizarFaltam();
+  iniciarCameraScan();
+}
+
+async function iniciarCameraScan() {
+  const video = document.getElementById('scanVideo');
+  if (!video || !_scan) return;
+  try {
+    _scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    video.srcObject = _scan.stream;
+    await video.play();
+    _scan.rafId = requestAnimationFrame(tickScan);
+  } catch (e) {
+    flashHint('Câmera indisponível — use "Sem QR code"', true, 6000);
+  }
+}
+
+function tickScan() {
+  if (!_scan || !_scan.ativo) return;
+  const video = document.getElementById('scanVideo');
+  const canvas = document.getElementById('scanCanvas');
+  if (video && canvas && video.readyState === video.HAVE_ENOUGH_DATA && !_scan.pausado && Date.now() >= _scan.cooldownUntil) {
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    try {
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+      if (code) { const txt = _lerTextoQr(code); if (txt) onQrLido(txt); }
+    } catch (e) { /* frame não pronto */ }
+  }
+  _scan.rafId = requestAnimationFrame(tickScan);
+}
+
+// Conteúdo do QR: só ASCII (sem acento) — evita corrupção de encoding no leitor.
+function _asciiRonda(s) {
+  return String(s == null ? '' : s)
+    .replace(/[‐-―−]/g, '-')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^ -~]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+// Normalização para comparar (tolerante a acento, caixa, traço e espaços).
+function _normRonda(s) {
+  return _asciiRonda(s).replace(/\s*-\s*/g, ' - ').toLowerCase();
+}
+
+// Lê o texto do QR pelos bytes crus (UTF-8), evitando mojibake do jsQR.
+function _lerTextoQr(code) {
+  try {
+    if (code.binaryData && code.binaryData.length && typeof TextDecoder === 'function') {
+      const s = new TextDecoder('utf-8').decode(new Uint8Array(code.binaryData));
+      if (s) return s;
+    }
+  } catch (e) { /* usa fallback abaixo */ }
+  return code.data || '';
+}
+
+// Chave só com letras/números (ignora espaços, traços, acentos).
+function _soLetrasNums(s) { return _asciiRonda(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
+function matchCatracaQr(texto) {
+  const t = _normRonda(texto);
+  // Regra principal: a catraca é SEMPRE um número e vem por último;
+  // o que vem antes é o piso/local. (Ex.: "Terreo Bloco A 03" → piso "Terreo Bloco A", catraca 3.)
+  const mnum = t.match(/(\d+)\s*$/);
+  if (mnum) {
+    const catNum = String(parseInt(mnum[1], 10));
+    const pisoKey = _soLetrasNums(t.slice(0, mnum.index));
+    for (const local of _locais) {
+      if (_soLetrasNums(local.nome) !== pisoKey) continue;
+      const cats = (_scan && _scan.catracasPorLocal[local.id]) || [];
+      const catraca = cats.find(c => { const d = String(c.nome).replace(/\D/g, ''); return d && String(parseInt(d, 10)) === catNum; });
+      if (catraca) return { local, catraca };
+    }
+  }
+  // Fallback: separador + nome completo da catraca (caso não seja só número).
+  for (const local of _locais) {
+    const prefixo = _normRonda(local.nome) + ' - ';
+    if (t.startsWith(prefixo)) {
+      const nomeCat = t.slice(prefixo.length).trim();
+      const cats = (_scan && _scan.catracasPorLocal[local.id]) || [];
+      const catraca = cats.find(c => _normRonda(c.nome) === nomeCat);
+      if (catraca) return { local, catraca };
+    }
+  }
+  return null;
+}
+
+function onQrLido(texto) {
+  if (!_scan || _scan.pausado) return;
+  const match = matchCatracaQr(texto);
+  if (!match) {
+    _scan.cooldownUntil = Date.now() + 1800;
+    flashHint('QR não é de uma catraca cadastrada', true);
+    return;
+  }
+  _scan.pausado = true;
+  if (navigator.vibrate) { try { navigator.vibrate(80); } catch (e) {} }
+  const jaFeita = catracaJaRegistradaHoje(match.local.id, match.catraca.id);
+  abrirModalCatracaScan(match.local, match.catraca, { jaFeita });
+}
+
+function flashHint(msg, erro, duracao) {
+  const el = document.getElementById('scanHint');
+  if (!el) return;
+  el.innerHTML = (erro ? '<i class="fas fa-triangle-exclamation"></i> ' : '') + escapeHTML(msg);
+  el.classList.toggle('erro', !!erro);
+  clearTimeout(_scan && _scan.hintTimer);
+  if (_scan) _scan.hintTimer = setTimeout(() => {
+    const e2 = document.getElementById('scanHint');
+    if (e2) { e2.innerHTML = '<i class="fas fa-qrcode"></i> Aponte para o QR da catraca'; e2.classList.remove('erro'); }
+  }, duracao || 1800);
+}
+
+function atualizarContadorScan() {
+  if (!_scan) return;
+  let n = 0; _scan.sessao.forEach(s => n += s.size);
+  const el = document.getElementById('scanCount');
+  if (el) el.textContent = `${n} catraca(s) nesta sessão`;
+}
+
+function calcularFaltantes() {
+  const grupos = [];
+  _locais.forEach(l => {
+    const cats = (_scan && _scan.catracasPorLocal[l.id]) || [];
+    if (!cats.length) return;
+    const r = rondaDoDiaLocal(l.id);
+    const feitas = new Set(r ? (r.catracas || []).map(c => c.catracaId) : []);
+    const faltam = cats.filter(c => !feitas.has(c.id));
+    if (faltam.length) grupos.push({ local: l, faltam });
+  });
+  return grupos;
+}
+
+function atualizarFaltam() {
+  if (!_scan) return;
+  const grupos = calcularFaltantes();
+  const total = grupos.reduce((a, g) => a + g.faltam.length, 0);
+  const num = document.getElementById('scanFaltamNum');
+  if (num) num.textContent = total;
+  const panel = document.getElementById('faltamPanel');
+  const body = panel && panel.querySelector('.fp-body');
+  if (body) {
+    body.innerHTML = grupos.length
+      ? grupos.map(g => `<div class="fp-local"><div class="fp-local-nome">${escapeHTML(g.local.nome)} <span class="fp-count">${g.faltam.length}</span></div>${g.faltam.map(c => `<div class="fp-cat">${escapeHTML(c.nome)}</div>`).join('')}</div>`).join('')
+      : '<div class="fp-vazio"><i class="fas fa-circle-check"></i> Todas as catracas do dia foram registradas!</div>';
+  }
+}
+
+function toggleFaltamPanel() {
+  const p = document.getElementById('faltamPanel'); if (!p) return;
+  const aberto = p.classList.toggle('aberto');
+  if (aberto) atualizarFaltam();
+  if (_scan) { _scan.pausado = aberto; if (!aberto) _scan.cooldownUntil = Date.now() + 800; }
+}
+
+function pararCameraScan() {
+  if (!_scan) return;
+  _scan.ativo = false;
+  if (_scan.rafId) cancelAnimationFrame(_scan.rafId);
+  if (_scan.stream) { try { _scan.stream.getTracks().forEach(t => t.stop()); } catch (e) {} }
+}
+
+async function encerrarRondaScan() {
+  let n = 0, locais = 0;
+  if (_scan) _scan.sessao.forEach(s => { n += s.size; if (s.size) locais++; });
+  pararCameraScan();
+  const ov = document.getElementById('scanOverlay'); if (ov) ov.remove();
+  _scan = null;
+  await carregarRondas();
+  const root = document.getElementById('viewRoot');
+  if (root && _viewAtual === 'rondas') renderRondas(root); else irPara('rondas');
+  mostrarNotificacao(n ? `Ronda encerrada: ${n} catraca(s) em ${locais} local(is).` : 'Ronda encerrada.');
+}
+
+/* ── Modal rápido da catraca (scan / manual / edição) ── */
+function abrirModalCatracaScan(local, catraca, opts = {}) {
+  _catModal = { localId: local.id, local, catraca, editRondaId: opts.editRondaId || null, fotos: [], estado: 'ok', onSalvo: opts.onSalvo || null };
+  if (_catModal.editRondaId && !_scan && !_catModal.onSalvo) {
+    const rid = _catModal.editRondaId;
+    _catModal.onSalvo = () => { if (document.getElementById('editRondaModal')) { fecharEditRonda(); editarRonda(rid); } };
+  }
+  _catModal._prodOpts = _produtos.map(p => `<option value="${p.id}">${escapeHTML(p.nome)}</option>`).join('');
+  const modal = document.createElement('div');
+  modal.className = 'scan-cat-modal'; modal.id = 'catModal';
+  modal.innerHTML = `<div class="scan-cat-card">
+    <div class="scm-head"><b><i class="fas fa-door-closed"></i> ${escapeHTML(catraca.nome)}</b><button type="button" onclick="fecharModalCatraca()">&times;</button></div>
+    <div class="scm-sub"><i class="fas fa-building"></i> ${escapeHTML(local.nome)}</div>
+    <div class="scm-body">
+      ${opts.jaFeita ? `<div class="scm-warn"><i class="fas fa-triangle-exclamation"></i> Esta catraca já foi registrada hoje. Salvar vai atualizar o registro.</div>` : ''}
+      <label class="field-label">Estado</label>
+      <div class="estado-toggle" id="catModalToggle">
+        <button type="button" class="on-ok" onclick="catModalSetEstado('ok')">OK</button>
+        <button type="button" onclick="catModalSetEstado('problema')">Problema</button>
+      </div>
+      <label class="field-label" style="margin-top:12px">Observação</label>
+      <textarea class="input" id="catModalObs" placeholder="Observação (opcional)"></textarea>
+      <label class="field-label" style="margin-top:12px"><i class="fas fa-screwdriver-wrench"></i> Peças trocadas</label>
+      <div id="catModalPecas"></div>
+      <button class="btn btn-sm" type="button" onclick="catModalAddPeca()" style="margin-top:6px"><i class="fas fa-plus"></i> Adicionar peça</button>
+      <label class="field-label" style="margin-top:12px"><i class="fas fa-camera"></i> Fotos</label>
+      <div class="foto-grid" id="catModalFotos"></div>
+      <input type="file" id="catModalFotoInput" accept="image/*" capture="environment" multiple style="display:none" onchange="catModalAddFoto(this.files)">
+      <button class="btn btn-sm" type="button" onclick="document.getElementById('catModalFotoInput').click()" style="margin-top:6px"><i class="fas fa-camera"></i> Adicionar foto</button>
+    </div>
+    <div class="scm-foot">
+      <button class="btn" type="button" onclick="fecharModalCatraca()">Cancelar</button>
+      <button class="btn btn-primary" id="catModalSalvar" type="button" onclick="salvarCatracaAtual()"><i class="fas fa-check"></i> Salvar e continuar</button>
+    </div></div>`;
+  document.body.appendChild(modal);
+  renderCatModalFotos();
+  if (_catModal.editRondaId) {
+    const r = _rondas.find(x => x.id === _catModal.editRondaId);
+    const salvo = r && (r.catracas || []).find(c => c.catracaId === catraca.id);
+    if (salvo) {
+      catModalSetEstado(salvo.estado || 'ok');
+      const obs = document.getElementById('catModalObs'); if (obs) obs.value = salvo.obs || '';
+      (salvo.pecas || []).forEach(p => catModalAddPeca(p));
+    }
+  }
+}
+
+function catModalSetEstado(estado) {
+  if (!_catModal) return;
+  _catModal.estado = estado;
+  const t = document.getElementById('catModalToggle'); if (!t) return;
+  const [bOk, bPb] = t.querySelectorAll('button');
+  bOk.className = estado === 'ok' ? 'on-ok' : '';
+  bPb.className = estado === 'problema' ? 'on-problema' : '';
+}
+
+function catModalAddPeca(dados) {
+  const box = document.getElementById('catModalPecas'); if (!box || !_catModal) return;
+  const id = 'pl_' + Math.random().toString(36).slice(2, 8);
+  const opts = _catModal._prodOpts || '';
+  const div = document.createElement('div'); div.className = 'peca-linha'; div.id = id;
+  div.innerHTML = `<select class="input peca-produto">${_produtos.length ? '<option value="">Selecione a peça…</option>' + opts : '<option value="">Nenhum produto cadastrado</option>'}</select>
+    <input type="number" min="1" class="input peca-qtd" value="${dados ? (dados.quantidade || 1) : 1}" placeholder="Qtd">
+    <button class="btn btn-sm btn-danger" type="button" onclick="document.getElementById('${id}').remove()"><i class="fas fa-times"></i></button>`;
+  box.appendChild(div);
+  if (dados && dados.produtoId) div.querySelector('.peca-produto').value = dados.produtoId;
+}
+
+function catModalAddFoto(files) {
+  if (!_catModal) return;
+  const arr = Array.from(files);
+  const btn = document.getElementById('catModalSalvar'); if (btn) btn.disabled = true;
+  Promise.all(arr.map(f => comprimirImagem(f, 1024, 0.65)
+    .then(b => _catModal.fotos.push({ base64: b }))
+    .catch(() => mostrarNotificacao('Falha ao processar imagem', 'erro'))
+  )).then(() => { if (btn) btn.disabled = false; renderCatModalFotos(); });
+  const inp = document.getElementById('catModalFotoInput'); if (inp) inp.value = '';
+}
+
+function catModalRemoverFoto(i) {
+  if (!_catModal) return;
+  _catModal.fotos.splice(i, 1);
+  renderCatModalFotos();
+}
+
+function renderCatModalFotos() {
+  const box = document.getElementById('catModalFotos'); if (!box || !_catModal) return;
+  box.innerHTML = (_catModal.fotos || []).map((f, i) => `<div class="foto-thumb">
+      <img class="zoomable" src="${f.base64}" alt="foto">
+      <button class="foto-del" type="button" onclick="catModalRemoverFoto(${i})"><i class="fas fa-times"></i></button>
+    </div>`).join('');
+}
+
+function fecharModalCatraca() {
+  const m = document.getElementById('catModal'); if (m) m.remove();
+  _catModal = null;
+  if (_scan) { _scan.pausado = false; _scan.cooldownUntil = Date.now() + 1200; }
+}
+
+async function salvarCatracaAtual() {
+  if (!_catModal) return;
+  const btn = document.getElementById('catModalSalvar');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando…'; }
+  const obs = ((document.getElementById('catModalObs') || {}).value || '').trim();
+  const pecas = [];
+  document.querySelectorAll('#catModalPecas .peca-linha').forEach(div => {
+    const pid = div.querySelector('.peca-produto').value;
+    if (!pid) return;
+    const prod = _produtos.find(p => p.id === pid);
+    pecas.push({ produtoId: pid, produtoNome: prod ? prod.nome : '', quantidade: Number(div.querySelector('.peca-qtd').value) || 1, obs: '' });
+  });
+  const dados = { estado: _catModal.estado || 'ok', obs, pecas, fotos: _catModal.fotos || [] };
+  const { localId, catraca, editRondaId, onSalvo } = _catModal;
+  try {
+    await salvarCatracaScan(localId, catraca, dados, editRondaId);
+    if (_scan) {
+      if (!_scan.sessao.has(localId)) _scan.sessao.set(localId, new Set());
+      _scan.sessao.get(localId).add(catraca.id);
+      atualizarContadorScan();
+      atualizarFaltam();
+      flashHint('✓ ' + catraca.nome + ' registrada', false, 1800);
+    }
+    mostrarNotificacao('Catraca registrada.');
+    fecharModalCatraca();
+    if (onSalvo) onSalvo();
+  } catch (e) {
+    mostrarNotificacao('Erro ao salvar: ' + e.message, 'erro');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check"></i> Salvar e continuar'; }
+  }
+}
+
+async function salvarCatracaScan(localId, catraca, dados, editRondaId) {
+  const local = _locais.find(l => l.id === localId);
+  const agora = new Date();
+  const agoraTs = firebase.firestore.Timestamp.fromDate(agora);
+  const agoraLocal = dataHoraInputLocal(agora);
+  const entry = { catracaId: catraca.id, nome: catraca.nome, estado: dados.estado || 'ok', obs: dados.obs || '', pecas: dados.pecas || [] };
+  let ronda = editRondaId ? _rondas.find(r => r.id === editRondaId) : rondaDoDiaLocal(localId);
+  let rondaId = ronda ? ronda.id : null;
+
+  const montarPecas = (cats, base) => {
+    const arr = [];
+    cats.forEach(c => (c.pecas || []).forEach(p => arr.push({ ...p, catracaId: c.catracaId, catracaNome: c.nome })));
+    (base && Array.isArray(base.pecasTrocadas) ? base.pecasTrocadas : []).filter(p => !p.catracaId).forEach(p => arr.push(p));
+    return arr;
+  };
+
+  if (!rondaId) {
+    const dataTs = firebase.firestore.Timestamp.fromDate(new Date(hojeInput() + 'T12:00:00'));
+    const cats = [entry];
+    const nova = {
+      localId, localNome: local ? local.nome : '',
+      tecnicoUid: window._userUid, tecnicoNome: window._userNome, tecnicoEmail: window._userEmail,
+      dataRonda: dataTs,
+      horaInicio: agoraTs, horaInicioLocal: agoraLocal,
+      horaTermino: agoraTs, horaTerminoLocal: agoraLocal,
+      localVisto: { ok: true, obs: '' },
+      catracas: cats, pecasTrocadas: montarPecas(cats, null),
+      demaisInfos: '', status: 'concluida', nFotos: 0,
+      criadoPor: window._userEmail || '', criadoPorUid: window._userUid || '',
+      criadoEm: firebase.firestore.FieldValue.serverTimestamp(), criadoEmLocal: new Date().toISOString(),
+      finalizadaEm: firebase.firestore.FieldValue.serverTimestamp(), finalizadaEmLocal: new Date().toISOString(),
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(), atualizadoEmLocal: new Date().toISOString(),
+    };
+    const ref = await COL_RONDAS().add(nova);
+    rondaId = ref.id;
+    _rondas.push({ id: rondaId, ...nova, dataRonda: dataTs, horaInicio: agoraTs, horaTermino: agoraTs });
+    registrarLog('criacao', 'Iniciou ronda', `Iniciou ronda de ${local ? local.nome : 'local'} e registrou a catraca ${catraca.nome}.`, { itemTipo: 'ronda', itemId: rondaId, localId });
+  } else {
+    const cats = Array.isArray(ronda.catracas) ? ronda.catracas.slice() : [];
+    const idx = cats.findIndex(c => c.catracaId === catraca.id);
+    if (idx >= 0) cats[idx] = entry; else cats.push(entry);
+    const pecasTrocadas = montarPecas(cats, ronda);
+    await COL_RONDAS().doc(rondaId).set({
+      catracas: cats, pecasTrocadas,
+      horaTermino: agoraTs, horaTerminoLocal: agoraLocal,
+      status: 'concluida',
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(), atualizadoEmLocal: new Date().toISOString(),
+    }, { merge: true });
+    ronda.catracas = cats; ronda.pecasTrocadas = pecasTrocadas; ronda.horaTermino = agoraTs; ronda.status = 'concluida';
+    registrarLog('edicao', 'Registrou catraca', `Registrou a catraca ${catraca.nome} em ${local ? local.nome : 'local'}.`, { itemTipo: 'ronda', itemId: rondaId, localId });
+  }
+
+  const fotos = dados.fotos || [];
+  if (fotos.length) {
+    await Promise.all(fotos.map(f => SUB_FOTOS(rondaId).add({
+      base64: f.base64, secao: 'catraca', legenda: '', catracaId: catraca.id, catracaNome: catraca.nome,
+      criadoEm: new Date().toISOString(), criadoPor: window._userEmail || ''
+    })));
+    try {
+      const snap = await SUB_FOTOS(rondaId).get();
+      await COL_RONDAS().doc(rondaId).set({ nFotos: snap.size, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      const rr = _rondas.find(x => x.id === rondaId); if (rr) rr.nFotos = snap.size;
+    } catch (e) { /* contagem não crítica */ }
+  }
+  return rondaId;
+}
+
+/* ── "Sem QR code": escolher piso/local e catraca ── */
+function scanManual() {
+  if (_scan) _scan.pausado = true;
+  abrirPickerLocalCatraca(null, null);
+}
+
+function abrirPickerLocalCatraca(editRondaId, fixedLocalId) {
+  const localOpts = _locais.map(l => `<option value="${l.id}" ${l.id === fixedLocalId ? 'selected' : ''}>${escapeHTML(l.nome)}</option>`).join('');
+  const modal = document.createElement('div');
+  modal.className = 'scan-cat-modal'; modal.id = 'pickerModal';
+  modal.dataset.edit = editRondaId || '';
+  modal.innerHTML = `<div class="scan-cat-card">
+    <div class="scm-head"><b><i class="fas fa-keyboard"></i> Selecionar catraca</b><button type="button" onclick="fecharPicker(true)">&times;</button></div>
+    <div class="scm-body">
+      <label class="field-label">Piso / Local</label>
+      <select class="input" id="pickerLocal" ${fixedLocalId ? 'disabled' : ''} onchange="pickerCarregarCatracas()"><option value="">Selecione…</option>${localOpts}</select>
+      <label class="field-label" style="margin-top:12px">Catraca</label>
+      <select class="input" id="pickerCatraca"><option value="">Selecione o local…</option></select>
+    </div>
+    <div class="scm-foot">
+      <button class="btn" type="button" onclick="fecharPicker(true)">Cancelar</button>
+      <button class="btn btn-primary" type="button" onclick="pickerContinuar()"><i class="fas fa-arrow-right"></i> Continuar</button>
+    </div></div>`;
+  document.body.appendChild(modal);
+  if (fixedLocalId) pickerCarregarCatracas();
+}
+
+async function pickerCarregarCatracas() {
+  const localId = (document.getElementById('pickerLocal') || {}).value || '';
+  const sel = document.getElementById('pickerCatraca'); if (!sel) return;
+  if (!localId) { sel.innerHTML = '<option value="">Selecione o local…</option>'; return; }
+  sel.innerHTML = '<option value="">Carregando…</option>';
+  let cats = _scan && _scan.catracasPorLocal[localId];
+  if (!cats) {
+    try { const snap = await SUB_CATRACAS(localId).get(); cats = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.ativa !== false); }
+    catch (e) { sel.innerHTML = '<option value="">Erro ao carregar</option>'; return; }
+  }
+  sel.innerHTML = cats.length ? '<option value="">Selecione…</option>' + cats.map(c => `<option value="${c.id}">${escapeHTML(c.nome)}</option>`).join('') : '<option value="">Sem catracas cadastradas</option>';
+  sel._cats = cats;
+}
+
+function pickerContinuar() {
+  const localId = (document.getElementById('pickerLocal') || {}).value || '';
+  const selCat = document.getElementById('pickerCatraca');
+  const catracaId = selCat ? selCat.value : '';
+  if (!localId || !catracaId) { mostrarNotificacao('Selecione o local e a catraca.', 'erro'); return; }
+  const local = _locais.find(l => l.id === localId);
+  const cats = (selCat && selCat._cats) || (_scan && _scan.catracasPorLocal[localId]) || [];
+  const catraca = cats.find(c => c.id === catracaId);
+  if (!local || !catraca) { mostrarNotificacao('Catraca inválida.', 'erro'); return; }
+  const editRondaId = document.getElementById('pickerModal').dataset.edit || null;
+  const jaFeita = !editRondaId && catracaJaRegistradaHoje(localId, catracaId);
+  fecharPicker(false);
+  abrirModalCatracaScan(local, catraca, { editRondaId, jaFeita });
+}
+
+function fecharPicker(retomar) {
+  const m = document.getElementById('pickerModal'); if (m) m.remove();
+  if (retomar && _scan) { _scan.pausado = false; _scan.cooldownUntil = Date.now() + 800; }
+}
+
+/* ── Edição simplificada de uma ronda ── */
+function editarRonda(id) {
+  const r = _rondas.find(x => x.id === id); if (!r) { mostrarNotificacao('Ronda não encontrada.', 'erro'); return; }
+  const cats = (r.catracas || []);
+  const linhas = cats.length ? cats.map(c => `<div class="er-cat">
+      <div><b>${escapeHTML(c.nome)}</b> <span class="er-est ${c.estado === 'problema' ? 'prob' : 'ok'}">${c.estado === 'problema' ? 'Problema' : 'OK'}</span>${(c.pecas && c.pecas.length) ? ` · ${c.pecas.length} peça(s)` : ''}</div>
+      <button class="btn btn-sm" type="button" onclick="editarCatracaDaRonda('${id}','${c.catracaId}')"><i class="fas fa-pen"></i></button>
+    </div>`).join('') : '<div class="dim" style="color:var(--muted);padding:6px 0">Nenhuma catraca registrada ainda.</div>';
+  const modal = document.createElement('div');
+  modal.className = 'scan-cat-modal'; modal.id = 'editRondaModal';
+  modal.innerHTML = `<div class="scan-cat-card">
+    <div class="scm-head"><b><i class="fas fa-clipboard-check"></i> Editar ronda</b><button type="button" onclick="fecharEditRonda()">&times;</button></div>
+    <div class="scm-sub"><i class="fas fa-building"></i> ${escapeHTML(r.localNome || '')} · ${formatarData(r.dataRonda)}</div>
+    <div class="scm-body">
+      <label class="field-label">Catracas</label>
+      <div id="erCatracas">${linhas}</div>
+      <button class="btn btn-sm" type="button" style="margin-top:8px" onclick="editarRondaAddCatraca('${id}')"><i class="fas fa-plus"></i> Adicionar catraca</button>
+      <label class="field-label" style="margin-top:16px">Local visto</label>
+      <label class="checkline"><input type="checkbox" id="erLocalOk" ${(!r.localVisto || r.localVisto.ok) ? 'checked' : ''}> Tudo certo no local</label>
+      <textarea class="input" id="erLocalObs" style="margin-top:8px" placeholder="Observações do local…">${r.localVisto ? escapeHTML(r.localVisto.obs || '') : ''}</textarea>
+      <label class="field-label" style="margin-top:12px">Demais informações</label>
+      <textarea class="input" id="erInfos" placeholder="Outras observações…">${escapeHTML(r.demaisInfos || '')}</textarea>
+    </div>
+    <div class="scm-foot">
+      <button class="btn" type="button" onclick="fecharEditRonda()">Fechar</button>
+      <button class="btn btn-primary" type="button" onclick="salvarEditRondaCampos('${id}')"><i class="fas fa-check"></i> Salvar</button>
+    </div></div>`;
+  document.body.appendChild(modal);
+}
+
+function editarCatracaDaRonda(rondaId, catracaId) {
+  const r = _rondas.find(x => x.id === rondaId); if (!r) return;
+  const local = _locais.find(l => l.id === r.localId) || { id: r.localId, nome: r.localNome || '' };
+  const salvo = (r.catracas || []).find(c => c.catracaId === catracaId) || { catracaId, nome: '' };
+  const cm = document.getElementById('editRondaModal'); if (cm) cm.remove();
+  abrirModalCatracaScan(local, { id: catracaId, nome: salvo.nome }, { editRondaId: rondaId, onSalvo: () => editarRonda(rondaId) });
+}
+
+async function editarRondaAddCatraca(rondaId) {
+  const r = _rondas.find(x => x.id === rondaId); if (!r) return;
+  const cm = document.getElementById('editRondaModal'); if (cm) cm.remove();
+  abrirPickerLocalCatraca(rondaId, r.localId);
+}
+
+async function salvarEditRondaCampos(id) {
+  const r = _rondas.find(x => x.id === id); if (!r) return;
+  const localVisto = { ok: !!(document.getElementById('erLocalOk') || {}).checked, obs: ((document.getElementById('erLocalObs') || {}).value || '').trim() };
+  const demaisInfos = ((document.getElementById('erInfos') || {}).value || '').trim();
+  try {
+    await COL_RONDAS().doc(id).set({ localVisto, demaisInfos, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(), atualizadoEmLocal: new Date().toISOString() }, { merge: true });
+    r.localVisto = localVisto; r.demaisInfos = demaisInfos;
+    registrarLog('edicao', 'Editou ronda', `Editou dados da ronda de ${r.localNome || 'local'}.`, { itemTipo: 'ronda', itemId: id, localId: r.localId });
+    mostrarNotificacao('Ronda atualizada.');
+    fecharEditRonda();
+    await carregarRondas();
+    const root = document.getElementById('viewRoot');
+    if (root && _viewAtual === 'rondas') renderRondas(root);
+  } catch (e) { mostrarNotificacao('Erro ao salvar: ' + e.message, 'erro'); }
+}
+
+function fecharEditRonda() {
+  const m = document.getElementById('editRondaModal'); if (m) m.remove();
+}
+
 async function abrirFormRonda(id = null) {
   _rondaEdit = id;
   _fotosRonda = [];
@@ -1062,7 +1611,10 @@ async function carregarCatracasForm() {
       _estadosCatraca[c.id] = salvo ? salvo.estado : 'ok';
     });
     if (!_catracasForm.length) { box.innerHTML = '<span style="color:var(--muted)">Este local não tem catracas cadastradas.</span>'; agendarAutosaveRonda(); return; }
-    box.innerHTML = _catracasForm.map(c => {
+    const buscaHtml = _catracasForm.length > 3
+      ? '<div class="cat-search-wrap"><i class="fas fa-search"></i><input class="input cat-search-input" id="catSearchInput" placeholder="Pesquisar catraca…" oninput="filtrarCatracasForm(this.value)"></div>'
+      : '';
+    box.innerHTML = buscaHtml + _catracasForm.map(c => {
       const est = _estadosCatraca[c.id];
       const obsSalvo = r ? ((r.catracas || []).find(x => x.catracaId === c.id) || {}).obs || '' : '';
       return `<div class="catraca-card" id="catCard_${c.id}">
@@ -1085,7 +1637,7 @@ async function carregarCatracasForm() {
           <input type="file" id="catFotoInput_${c.id}" accept="image/*" multiple style="display:none" onchange="adicionarFotosCatraca('${c.id}', this.files)">
         </div>
       </div>`;
-    }).join('');
+    }).join('') + '<div id="catSearchVazio" style="display:none;color:var(--muted);padding:6px 2px 0">Nenhuma catraca encontrada.</div>';
     // preenche peças salvas e renderiza fotos de cada catraca
     _catracasForm.forEach(c => {
       const salvo = r ? (r.catracas || []).find(x => x.catracaId === c.id) : null;
@@ -1097,6 +1649,20 @@ async function carregarCatracasForm() {
   } catch (e) {
     box.innerHTML = '<span style="color:var(--danger)">Erro ao carregar catracas.</span>';
   }
+}
+
+function filtrarCatracasForm(termo) {
+  const t = (termo || '').trim().toLowerCase();
+  let visiveis = 0;
+  _catracasForm.forEach(c => {
+    const card = document.getElementById('catCard_' + c.id);
+    if (!card) return;
+    const match = !t || String(c.nome || '').toLowerCase().includes(t);
+    card.style.display = match ? '' : 'none';
+    if (match) visiveis++;
+  });
+  const vazio = document.getElementById('catSearchVazio');
+  if (vazio) vazio.style.display = visiveis ? 'none' : '';
 }
 
 function setEstadoCatraca(id, estado) {
@@ -1349,7 +1915,7 @@ function renderLocais(root) {
   root.innerHTML = `
     <div class="view-header">
       <div class="view-title"><h2><i class="fas fa-building"></i> Locais</h2><p>Locais atendidos e suas catracas.</p></div>
-      <div class="view-actions"><button class="btn btn-primary" onclick="abrirFormLocal()"><i class="fas fa-plus"></i> Novo local</button></div>
+      <div class="view-actions"><button class="btn" onclick="gerarQrCodesCatracas()"><i class="fas fa-qrcode"></i> Gerar QR Codes</button><button class="btn btn-primary" onclick="abrirFormLocal()"><i class="fas fa-plus"></i> Novo local</button></div>
     </div>
     <div class="list" id="listaLocais"></div>`;
   const box = document.getElementById('listaLocais');
@@ -1367,6 +1933,63 @@ function renderLocais(root) {
         ${window._can.moverLixeira ? `<button class="btn btn-sm btn-danger" onclick="moverLocalLixeira('${l.id}')"><i class="fas fa-trash"></i></button>` : ''}
       </div>
     </div>`).join('');
+}
+
+async function gerarQrCodesCatracas() {
+  if (typeof qrcode !== 'function') { mostrarNotificacao('Biblioteca de QR não carregada. Recarregue a página.', 'erro'); return; }
+  if (!_locais.length) { mostrarNotificacao('Nenhum local cadastrado.', 'erro'); return; }
+  mostrarNotificacao('Gerando QR codes…');
+  try {
+    const grupos = await Promise.all(_locais.map(async l => {
+      const snap = await SUB_CATRACAS(l.id).get();
+      const cats = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.ativa !== false);
+      return { local: l, catracas: cats };
+    }));
+    const comCatracas = grupos.filter(g => g.catracas.length);
+    if (!comCatracas.length) { mostrarNotificacao('Nenhuma catraca cadastrada nos locais.', 'erro'); return; }
+
+    const svgDe = (texto) => {
+      const qr = qrcode(0, 'M');
+      qr.addData(texto);
+      qr.make();
+      return qr.createSvgTag({ cellSize: 4, margin: 1, scalable: true });
+    };
+
+    const cards = comCatracas.flatMap(g => g.catracas.map(c => `<div class="qr-card">
+          <div class="qr-img">${svgDe(_asciiRonda(g.local.nome) + ' - ' + _asciiRonda(c.nome))}</div>
+          <div class="qr-num">${escapeHTML(c.nome)}</div>
+          <div class="qr-aviso">NÃO REMOVA</div>
+        </div>`)).join('');
+
+    const html = `<!DOCTYPE html><html lang="pt-br"><head><meta charset="utf-8">
+      <title>QR Codes das Catracas</title>
+      <style>
+        @page { size: A4; margin: 10mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111; }
+        .qr-local { margin: 0 0 8px; break-inside: avoid; }
+        .qr-local h2 { font-size: 11px; margin: 0 0 4px; border-bottom: 1px solid #111; padding-bottom: 2px; }
+        .qr-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+        .qr-card { border: 1px solid #999; border-radius: 4px; padding: 4px 3px; text-align: center; break-inside: avoid; }
+        .qr-img svg { width: 100%; height: auto; display: block; }
+        .qr-num { font-size: 8px; font-weight: 700; margin-top: 3px; line-height: 1.1; word-break: break-word; }
+        .qr-aviso { font-size: 7px; font-weight: 800; letter-spacing: .3px; color: #c00; margin-top: 1px; }
+        @media screen { body { background: #f0f0f0; padding: 16px; } .sheet { background: #fff; max-width: 210mm; margin: 0 auto; padding: 10mm; box-shadow: 0 2px 10px rgba(0,0,0,.15); } .toolbar { text-align: center; margin-bottom: 12px; } .toolbar button { padding: 8px 18px; font-size: 14px; cursor: pointer; } }
+        @media print { .toolbar { display: none; } .sheet { box-shadow: none; padding: 0; max-width: none; } }
+      </style></head>
+      <body>
+        <div class="toolbar"><button onclick="window.print()">Imprimir</button></div>
+        <div class="sheet"><div class="qr-grid">${cards}</div></div>
+      </body></html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) { mostrarNotificacao('Permita pop-ups para gerar os QR codes.', 'erro'); return; }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  } catch (e) {
+    mostrarNotificacao('Erro ao gerar QR codes: ' + e.message, 'erro');
+  }
 }
 
 function abrirFormLocal(id = null) {
@@ -1442,7 +2065,7 @@ async function gerenciarCatracas(localId) {
       <div class="ronda-block" style="margin-top:14px">
         <div class="rb-title"><i class="fas fa-plus"></i> Adicionar catraca</div>
         <div class="form-row">
-          <div class="form-group"><label class="field-label">Nome / identificação *</label><input class="input" id="cNome" placeholder="Ex.: Catraca 01"></div>
+          <div class="form-group"><label class="field-label">Número da catraca *</label><input class="input" id="cNome" type="text" inputmode="numeric" pattern="\d*" maxlength="6" placeholder="Ex.: 01" oninput="this.value=this.value.replace(/\D/g,'')"><small style="color:var(--muted);font-size:11px">Apenas número, sem espaço (usado no QR da ronda).</small></div>
           <div class="form-group"><label class="field-label">Tipo</label><input class="input" id="cTipo" placeholder="Ex.: Torniquete"></div>
         </div>
         <button class="btn btn-primary btn-sm" onclick="addCatraca('${localId}')"><i class="fas fa-plus"></i> Adicionar</button>
@@ -1465,8 +2088,8 @@ async function listarCatracas(localId) {
 }
 
 async function addCatraca(localId) {
-  const nome = document.getElementById('cNome').value.trim();
-  if (!nome) return mostrarNotificacao('Informe o nome da catraca.', 'erro');
+  const nome = document.getElementById('cNome').value.replace(/\D/g, '');
+  if (!nome) return mostrarNotificacao('Informe o número da catraca (apenas números, sem espaço).', 'erro');
   try {
     const local = _locais.find(l => l.id === localId);
     const ref = await SUB_CATRACAS(localId).add({ nome, tipo: document.getElementById('cTipo').value.trim(), ativa: true, criadoPor: window._userEmail || '', criadoEm: firebase.firestore.FieldValue.serverTimestamp() });
