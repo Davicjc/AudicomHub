@@ -871,6 +871,11 @@ async function iniciarRondaScan() {
     <canvas id="scanCanvas" style="display:none"></canvas>
     <div class="scan-frame"></div>
     <div class="scan-top"><div class="scan-hint" id="scanHint"><i class="fas fa-qrcode"></i> Aponte para o QR da catraca</div></div>
+    <button type="button" class="scan-faltam" id="scanFaltam" onclick="toggleFaltamPanel()"><i class="fas fa-list-check"></i> Faltam <b id="scanFaltamNum">0</b></button>
+    <div class="scan-faltam-panel" id="faltamPanel">
+      <div class="fp-head"><b><i class="fas fa-list-check"></i> Faltam hoje</b><button type="button" onclick="toggleFaltamPanel()">&times;</button></div>
+      <div class="fp-body"></div>
+    </div>
     <div class="scan-bottom">
       <div class="scan-count" id="scanCount">0 catraca(s) nesta sessão</div>
       <div class="scan-actions">
@@ -879,6 +884,7 @@ async function iniciarRondaScan() {
       </div>
     </div>`;
   document.body.appendChild(ov);
+  atualizarFaltam();
   iniciarCameraScan();
 }
 
@@ -957,6 +963,41 @@ function atualizarContadorScan() {
   let n = 0; _scan.sessao.forEach(s => n += s.size);
   const el = document.getElementById('scanCount');
   if (el) el.textContent = `${n} catraca(s) nesta sessão`;
+}
+
+function calcularFaltantes() {
+  const grupos = [];
+  _locais.forEach(l => {
+    const cats = (_scan && _scan.catracasPorLocal[l.id]) || [];
+    if (!cats.length) return;
+    const r = rondaDoDiaLocal(l.id);
+    const feitas = new Set(r ? (r.catracas || []).map(c => c.catracaId) : []);
+    const faltam = cats.filter(c => !feitas.has(c.id));
+    if (faltam.length) grupos.push({ local: l, faltam });
+  });
+  return grupos;
+}
+
+function atualizarFaltam() {
+  if (!_scan) return;
+  const grupos = calcularFaltantes();
+  const total = grupos.reduce((a, g) => a + g.faltam.length, 0);
+  const num = document.getElementById('scanFaltamNum');
+  if (num) num.textContent = total;
+  const panel = document.getElementById('faltamPanel');
+  const body = panel && panel.querySelector('.fp-body');
+  if (body) {
+    body.innerHTML = grupos.length
+      ? grupos.map(g => `<div class="fp-local"><div class="fp-local-nome">${escapeHTML(g.local.nome)} <span class="fp-count">${g.faltam.length}</span></div>${g.faltam.map(c => `<div class="fp-cat">${escapeHTML(c.nome)}</div>`).join('')}</div>`).join('')
+      : '<div class="fp-vazio"><i class="fas fa-circle-check"></i> Todas as catracas do dia foram registradas!</div>';
+  }
+}
+
+function toggleFaltamPanel() {
+  const p = document.getElementById('faltamPanel'); if (!p) return;
+  const aberto = p.classList.toggle('aberto');
+  if (aberto) atualizarFaltam();
+  if (_scan) { _scan.pausado = aberto; if (!aberto) _scan.cooldownUntil = Date.now() + 800; }
 }
 
 function pararCameraScan() {
@@ -1097,6 +1138,7 @@ async function salvarCatracaAtual() {
       if (!_scan.sessao.has(localId)) _scan.sessao.set(localId, new Set());
       _scan.sessao.get(localId).add(catraca.id);
       atualizarContadorScan();
+      atualizarFaltam();
       flashHint('✓ ' + catraca.nome + ' registrada', false, 1800);
     }
     mostrarNotificacao('Catraca registrada.');
