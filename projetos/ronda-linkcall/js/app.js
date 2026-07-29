@@ -1062,7 +1062,10 @@ async function carregarCatracasForm() {
       _estadosCatraca[c.id] = salvo ? salvo.estado : 'ok';
     });
     if (!_catracasForm.length) { box.innerHTML = '<span style="color:var(--muted)">Este local não tem catracas cadastradas.</span>'; agendarAutosaveRonda(); return; }
-    box.innerHTML = _catracasForm.map(c => {
+    const buscaHtml = _catracasForm.length > 3
+      ? '<div class="cat-search-wrap"><i class="fas fa-search"></i><input class="input cat-search-input" id="catSearchInput" placeholder="Pesquisar catraca…" oninput="filtrarCatracasForm(this.value)"></div>'
+      : '';
+    box.innerHTML = buscaHtml + _catracasForm.map(c => {
       const est = _estadosCatraca[c.id];
       const obsSalvo = r ? ((r.catracas || []).find(x => x.catracaId === c.id) || {}).obs || '' : '';
       return `<div class="catraca-card" id="catCard_${c.id}">
@@ -1085,7 +1088,7 @@ async function carregarCatracasForm() {
           <input type="file" id="catFotoInput_${c.id}" accept="image/*" multiple style="display:none" onchange="adicionarFotosCatraca('${c.id}', this.files)">
         </div>
       </div>`;
-    }).join('');
+    }).join('') + '<div id="catSearchVazio" style="display:none;color:var(--muted);padding:6px 2px 0">Nenhuma catraca encontrada.</div>';
     // preenche peças salvas e renderiza fotos de cada catraca
     _catracasForm.forEach(c => {
       const salvo = r ? (r.catracas || []).find(x => x.catracaId === c.id) : null;
@@ -1097,6 +1100,20 @@ async function carregarCatracasForm() {
   } catch (e) {
     box.innerHTML = '<span style="color:var(--danger)">Erro ao carregar catracas.</span>';
   }
+}
+
+function filtrarCatracasForm(termo) {
+  const t = (termo || '').trim().toLowerCase();
+  let visiveis = 0;
+  _catracasForm.forEach(c => {
+    const card = document.getElementById('catCard_' + c.id);
+    if (!card) return;
+    const match = !t || String(c.nome || '').toLowerCase().includes(t);
+    card.style.display = match ? '' : 'none';
+    if (match) visiveis++;
+  });
+  const vazio = document.getElementById('catSearchVazio');
+  if (vazio) vazio.style.display = visiveis ? 'none' : '';
 }
 
 function setEstadoCatraca(id, estado) {
