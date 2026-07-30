@@ -215,8 +215,11 @@ async function buscarPedidos() {
 
         const listaContainer = document.getElementById('pedidos-lista');
         const cardsContainer = document.getElementById('pedidos-cards');
+        const filtrosBar = document.getElementById('user-filtros');
 
         if (result.success && result.data.length === 0) {
+            allPedidosUser = [];
+            if (filtrosBar) filtrosBar.style.display = 'none';
             cardsContainer.innerHTML = `
                 <div class="no-results">
                     <i class="fas fa-inbox"></i>
@@ -225,8 +228,12 @@ async function buscarPedidos() {
             `;
         } else if (result.success) {
             allPedidosUser = result.data;
-            cardsContainer.innerHTML = result.data.map(pedido => gerarCardPedido(pedido)).join('');
+            resetarFiltrosUser();
+            if (filtrosBar) filtrosBar.style.display = 'flex';
+            renderizarPedidosUser();
         } else {
+            allPedidosUser = [];
+            if (filtrosBar) filtrosBar.style.display = 'none';
             cardsContainer.innerHTML = `
                 <div class="error-message">
                     <i class="fas fa-exclamation-triangle"></i>
@@ -877,10 +884,12 @@ document.addEventListener('click', function (e) {
     const modalComents = document.getElementById('modal-comentarios');
     const modalSol     = document.getElementById('modal-solicitante-comentario');
     const modalExport  = document.getElementById('modal-exportar');
+    const modalExportU = document.getElementById('modal-exportar-user');
     if (e.target === modalAdmin)   fecharModal();
     if (e.target === modalComents) fecharModalComentarios();
     if (e.target === modalSol)     fecharModalSolicitante();
     if (e.target === modalExport)  fecharModalExportar();
+    if (e.target === modalExportU) fecharModalExportarUser();
 });
 
 document.addEventListener('keydown', function (e) {
@@ -889,6 +898,7 @@ document.addEventListener('keydown', function (e) {
         fecharModalComentarios();
         fecharModalSolicitante();
         fecharModalExportar();
+        fecharModalExportarUser();
         fecharImagemFull();
     }
 });
@@ -933,21 +943,24 @@ function aplicarFiltroRapido(btn, range) {
     atualizarPreviewExport();
 }
 
-function obterIntervaloExport() {
+// Núcleo compartilhado: calcula o intervalo de datas a partir de um modo + campos custom.
+function obterIntervaloDeCampos(rangeMode, idDe, idAte) {
     const hoje = new Date();
     hoje.setHours(23, 59, 59, 999);
     let inicio = null;
     let fim = hoje;
 
-    if (exportRangeMode === 'today') {
+    if (rangeMode === 'today') {
         inicio = new Date(); inicio.setHours(0, 0, 0, 0);
-    } else if (exportRangeMode === 'week') {
+    } else if (rangeMode === 'week') {
         inicio = new Date(); inicio.setDate(inicio.getDate() - 6); inicio.setHours(0, 0, 0, 0);
-    } else if (exportRangeMode === 'month') {
+    } else if (rangeMode === 'month') {
         inicio = new Date(); inicio.setDate(inicio.getDate() - 29); inicio.setHours(0, 0, 0, 0);
-    } else if (exportRangeMode === 'custom') {
-        const deVal  = document.getElementById('export-data-de').value;
-        const ateVal = document.getElementById('export-data-ate').value;
+    } else if (rangeMode === 'custom') {
+        const deEl  = document.getElementById(idDe);
+        const ateEl = document.getElementById(idAte);
+        const deVal  = deEl  ? deEl.value  : '';
+        const ateVal = ateEl ? ateEl.value : '';
         if (deVal)  inicio = new Date(deVal + 'T00:00:00');
         if (ateVal) fim    = new Date(ateVal + 'T23:59:59');
     }
@@ -955,21 +968,32 @@ function obterIntervaloExport() {
     return { inicio, fim };
 }
 
-function filtrarParaExport() {
-    const { inicio, fim } = obterIntervaloExport();
-    const filtroStatus = document.getElementById('export-filtro-status').value;
-    const filtroPrioridade = document.getElementById('export-filtro-prioridade').value;
-
-    return allSolicitacoes.filter(s => {
+// Núcleo compartilhado: filtra uma fonte de registros por intervalo/status/prioridade.
+function filtrarRegistros(fonte, { inicio, fim, status, prioridade }) {
+    return fonte.filter(s => {
         const data = new Date(s.dataHora);
         if (inicio && data < inicio) return false;
         if (fim && data > fim) return false;
-        if (filtroStatus) {
+        if (status) {
             const statusNorm = s.status === 'sem solucao' ? 'sem-solucao' : s.status;
-            if (statusNorm !== filtroStatus) return false;
+            if (statusNorm !== status) return false;
         }
-        if (filtroPrioridade && s.prioridade !== filtroPrioridade) return false;
+        if (prioridade && s.prioridade !== prioridade) return false;
         return true;
+    });
+}
+
+function obterIntervaloExport() {
+    return obterIntervaloDeCampos(exportRangeMode, 'export-data-de', 'export-data-ate');
+}
+
+function filtrarParaExport() {
+    const { inicio, fim } = obterIntervaloExport();
+    return filtrarRegistros(allSolicitacoes, {
+        inicio,
+        fim,
+        status: document.getElementById('export-filtro-status').value,
+        prioridade: document.getElementById('export-filtro-prioridade').value
     });
 }
 
@@ -1074,6 +1098,255 @@ function formatarDataArquivo() {
     const hh  = String(d.getHours()).padStart(2, '0');
     const min = String(d.getMinutes()).padStart(2, '0');
     return `${yyyy}${mm}${dd}_${hh}${min}`;
+}
+
+// =================== FILTROS + EXPORTAÇÃO (MINHAS SOLICITAÇÕES) ===================
+let userExportRangeMode = 'all';
+const PESO_PRIORIDADE = { critico: 3, medio: 2, basico: 1 };
+
+function resetarFiltrosUser() {
+    const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    setVal('user-filtro-status', '');
+    setVal('user-filtro-periodo', 'all');
+    setVal('user-ordenar', 'data-desc');
+    setVal('user-data-de', '');
+    setVal('user-data-ate', '');
+    const range = document.getElementById('user-periodo-range');
+    if (range) range.style.display = 'none';
+}
+
+function onUserPeriodoChange() {
+    const periodo = document.getElementById('user-filtro-periodo').value;
+    const range = document.getElementById('user-periodo-range');
+    if (range) range.style.display = periodo === 'custom' ? 'flex' : 'none';
+    if (periodo !== 'custom') {
+        const de = document.getElementById('user-data-de');
+        const ate = document.getElementById('user-data-ate');
+        if (de) de.value = '';
+        if (ate) ate.value = '';
+    }
+    renderizarPedidosUser();
+}
+
+// Aplica filtros/ordenação da barra inline sobre allPedidosUser e devolve a lista tratada.
+function filtrarOrdenarPedidosUser() {
+    const periodo = (document.getElementById('user-filtro-periodo') || {}).value || 'all';
+    const { inicio, fim } = obterIntervaloDeCampos(periodo, 'user-data-de', 'user-data-ate');
+    const status = (document.getElementById('user-filtro-status') || {}).value || '';
+
+    let lista = filtrarRegistros(allPedidosUser, { inicio, fim, status, prioridade: '' });
+
+    const ordenar = (document.getElementById('user-ordenar') || {}).value || 'data-desc';
+    lista = lista.slice().sort((a, b) => {
+        if (ordenar === 'prioridade') {
+            return (PESO_PRIORIDADE[b.prioridade] || 0) - (PESO_PRIORIDADE[a.prioridade] || 0);
+        }
+        const da = new Date(a.dataHora).getTime();
+        const dbt = new Date(b.dataHora).getTime();
+        return ordenar === 'data-asc' ? da - dbt : dbt - da;
+    });
+
+    return lista;
+}
+
+function renderizarPedidosUser() {
+    const cardsContainer = document.getElementById('pedidos-cards');
+    if (!cardsContainer) return;
+
+    const lista = filtrarOrdenarPedidosUser();
+
+    const infoEl = document.getElementById('user-count-info');
+    if (infoEl) infoEl.textContent = `${lista.length} de ${allPedidosUser.length} solicitações`;
+
+    if (lista.length === 0) {
+        cardsContainer.innerHTML = `
+            <div class="no-results">
+                <i class="fas fa-filter-circle-xmark"></i>
+                <p>Nenhuma solicitação corresponde aos filtros selecionados.</p>
+            </div>
+        `;
+        return;
+    }
+
+    cardsContainer.innerHTML = lista.map(pedido => gerarCardPedido(pedido)).join('');
+}
+
+// ---------- Popup de exportação ----------
+function abrirModalExportarUser() {
+    if (allPedidosUser.length === 0) {
+        showToast('warning', 'Busque seus pedidos pelo CPF antes de exportar');
+        return;
+    }
+
+    userExportRangeMode = 'all';
+    document.querySelectorAll('.export-user-quick-btn').forEach(b => b.classList.remove('active'));
+    const allBtn = document.querySelector('.export-user-quick-btn[data-range="all"]');
+    if (allBtn) allBtn.classList.add('active');
+
+    document.getElementById('export-user-date-range').style.display = 'none';
+    document.getElementById('export-user-filtro-status').value = '';
+    document.getElementById('export-user-filtro-prioridade').value = '';
+    document.getElementById('export-user-data-de').value = '';
+    document.getElementById('export-user-data-ate').value = '';
+
+    atualizarPreviewExportUser();
+    document.getElementById('modal-exportar-user').style.display = 'flex';
+}
+
+function fecharModalExportarUser() {
+    const m = document.getElementById('modal-exportar-user');
+    if (m) m.style.display = 'none';
+}
+
+function aplicarFiltroRapidoUser(btn, range) {
+    userExportRangeMode = range;
+    document.querySelectorAll('.export-user-quick-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const rangeContainer = document.getElementById('export-user-date-range');
+    if (range === 'custom') {
+        rangeContainer.style.display = 'flex';
+    } else {
+        rangeContainer.style.display = 'none';
+        document.getElementById('export-user-data-de').value = '';
+        document.getElementById('export-user-data-ate').value = '';
+    }
+
+    atualizarPreviewExportUser();
+}
+
+function filtrarParaExportUser() {
+    const { inicio, fim } = obterIntervaloDeCampos(userExportRangeMode, 'export-user-data-de', 'export-user-data-ate');
+    return filtrarRegistros(allPedidosUser, {
+        inicio,
+        fim,
+        status: document.getElementById('export-user-filtro-status').value,
+        prioridade: document.getElementById('export-user-filtro-prioridade').value
+    });
+}
+
+function atualizarPreviewExportUser() {
+    const registros = filtrarParaExportUser();
+    const countEl = document.getElementById('export-user-count');
+    if (countEl) countEl.textContent = registros.length;
+
+    ['btn-export-user-csv', 'btn-export-user-excel', 'btn-export-user-pdf'].forEach(id => {
+        const b = document.getElementById(id);
+        if (b) b.disabled = registros.length === 0;
+    });
+}
+
+function exportarUserCSV() {
+    const registros = filtrarParaExportUser();
+    if (registros.length === 0) { showToast('warning', 'Nenhum registro para exportar'); return; }
+
+    const dados = prepararDadosExport(registros);
+    const cabecalho = Object.keys(dados[0]);
+
+    const escaparCSV = (val) => {
+        const str = String(val ?? '');
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    };
+
+    const linhas = [
+        cabecalho.join(','),
+        ...dados.map(row => cabecalho.map(col => escaparCSV(row[col])).join(','))
+    ];
+
+    const bom = '﻿';
+    const blob = new Blob([bom + linhas.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `minhas_solicitacoes_${formatarDataArquivo()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showToast('success', `${registros.length} registros exportados em CSV`);
+    fecharModalExportarUser();
+}
+
+function exportarUserExcel() {
+    if (typeof XLSX === 'undefined') {
+        showToast('error', 'Biblioteca de Excel não carregada. Tente recarregar a página.');
+        return;
+    }
+
+    const registros = filtrarParaExportUser();
+    if (registros.length === 0) { showToast('warning', 'Nenhum registro para exportar'); return; }
+
+    const dados = prepararDadosExport(registros);
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(dados);
+
+    ws['!cols'] = [
+        { wch: 4 }, { wch: 36 }, { wch: 24 }, { wch: 16 },
+        { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 50 }, { wch: 60 }
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Minhas Solicitações');
+    XLSX.writeFile(wb, `minhas_solicitacoes_${formatarDataArquivo()}.xlsx`);
+
+    showToast('success', `${registros.length} registros exportados em Excel`);
+    fecharModalExportarUser();
+}
+
+function exportarUserPDF() {
+    const jsPDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!jsPDFCtor) {
+        showToast('error', 'Biblioteca de PDF não carregada. Tente recarregar a página.');
+        return;
+    }
+
+    const registros = filtrarParaExportUser();
+    if (registros.length === 0) { showToast('warning', 'Nenhum registro para exportar'); return; }
+
+    const statusLabel = { pendente: 'Em Andamento', realizado: 'Realizado', 'sem solucao': 'Sem Solução', 'sem-solucao': 'Sem Solução' };
+    const prioridadeLabel = { basico: 'Básico', medio: 'Médio', critico: 'Crítico' };
+
+    const doc = new jsPDFCtor({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    const cpf = formatarCPF((registros[0] && registros[0].cpf) || '');
+    const geradoEm = new Date().toLocaleString('pt-BR');
+
+    doc.setFontSize(16);
+    doc.text('Minhas Solicitações de Manutenção', 40, 40);
+    doc.setFontSize(10);
+    doc.setTextColor(90);
+    doc.text(`CPF: ${cpf}`, 40, 58);
+    doc.text(`Gerado em: ${geradoEm}  •  ${registros.length} registro(s)`, 40, 72);
+    doc.setTextColor(0);
+
+    const body = registros.map((s, i) => [
+        i + 1,
+        s.titulo || '',
+        s.dataHora ? new Date(s.dataHora).toLocaleString('pt-BR') : '',
+        prioridadeLabel[s.prioridade] || s.prioridade || '',
+        statusLabel[s.status] || s.status || ''
+    ]);
+
+    doc.autoTable({
+        startY: 88,
+        head: [['#', 'Título', 'Data/Hora', 'Prioridade', 'Status']],
+        body,
+        styles: { fontSize: 9, cellPadding: 5, overflow: 'linebreak' },
+        headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+        alternateRowStyles: { fillColor: [245, 247, 250] },
+        columnStyles: {
+            0: { cellWidth: 30 },
+            1: { cellWidth: 300 },
+            2: { cellWidth: 140 },
+            3: { cellWidth: 90 },
+            4: { cellWidth: 110 }
+        },
+        margin: { left: 40, right: 40 }
+    });
+
+    doc.save(`minhas_solicitacoes_${formatarDataArquivo()}.pdf`);
+    showToast('success', `${registros.length} registros exportados em PDF`);
+    fecharModalExportarUser();
 }
 
 // =================== VERIFICAÇÃO DE CPF ===================

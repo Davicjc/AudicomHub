@@ -240,6 +240,51 @@
 
             <div id="pedidos-lista" class="results-area" style="display:none;">
                 <h3 class="results-title">Resultados</h3>
+
+                <div class="filter-bar" id="user-filtros" style="display:none;">
+                    <div class="filter-item">
+                        <label for="user-filtro-status">Status</label>
+                        <select id="user-filtro-status" onchange="renderizarPedidosUser()">
+                            <option value="">Todas</option>
+                            <option value="pendente">Em Andamento</option>
+                            <option value="realizado">Realizadas</option>
+                            <option value="sem-solucao">Sem Solução</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <label for="user-filtro-periodo">Período</label>
+                        <select id="user-filtro-periodo" onchange="onUserPeriodoChange()">
+                            <option value="all">Todo o período</option>
+                            <option value="today">Hoje</option>
+                            <option value="week">Última semana</option>
+                            <option value="month">Último mês</option>
+                            <option value="custom">Personalizado</option>
+                        </select>
+                    </div>
+                    <div class="filter-item" id="user-periodo-range" style="display:none; flex-direction:row; gap:8px; align-items:flex-end;">
+                        <div class="filter-item">
+                            <label for="user-data-de">De</label>
+                            <input type="date" id="user-data-de" onchange="renderizarPedidosUser()">
+                        </div>
+                        <div class="filter-item">
+                            <label for="user-data-ate">Até</label>
+                            <input type="date" id="user-data-ate" onchange="renderizarPedidosUser()">
+                        </div>
+                    </div>
+                    <div class="filter-item">
+                        <label for="user-ordenar">Ordenar por</label>
+                        <select id="user-ordenar" onchange="renderizarPedidosUser()">
+                            <option value="data-desc">Data (mais recente)</option>
+                            <option value="data-asc">Data (mais antiga)</option>
+                            <option value="prioridade">Prioridade</option>
+                        </select>
+                    </div>
+                    <span class="filter-count" id="user-count-info"></span>
+                    <button class="btn btn--export btn--sm" onclick="abrirModalExportarUser()">
+                        <i class="fas fa-file-arrow-down"></i> Exportar
+                    </button>
+                </div>
+
                 <div id="pedidos-cards" class="cards-list"></div>
             </div>
             </section>
@@ -562,6 +607,103 @@
         </div>
     </div>
 
+    <!-- ===== MODAL: EXPORTAR (MINHAS SOLICITAÇÕES) ===== -->
+    <div id="modal-exportar-user" class="modal-overlay" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-box modal-box--export">
+            <div class="modal-box__header">
+                <div class="modal-box__header-info">
+                    <i class="fas fa-file-arrow-down modal-box__header-icon modal-box__header-icon--export"></i>
+                    <h3>Exportar Minhas Solicitações</h3>
+                </div>
+                <button class="modal-close" onclick="fecharModalExportarUser()" aria-label="Fechar modal">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="export-body">
+
+                <!-- PERÍODO -->
+                <div class="export-section">
+                    <div class="export-section__title">
+                        <i class="fas fa-calendar-range"></i>
+                        Período
+                    </div>
+                    <div class="export-quick-btns">
+                        <button class="export-quick-btn export-user-quick-btn active" data-range="all" onclick="aplicarFiltroRapidoUser(this, 'all')">Todo o período</button>
+                        <button class="export-quick-btn export-user-quick-btn" data-range="today" onclick="aplicarFiltroRapidoUser(this, 'today')">Hoje</button>
+                        <button class="export-quick-btn export-user-quick-btn" data-range="week" onclick="aplicarFiltroRapidoUser(this, 'week')">Última semana</button>
+                        <button class="export-quick-btn export-user-quick-btn" data-range="month" onclick="aplicarFiltroRapidoUser(this, 'month')">Último mês</button>
+                        <button class="export-quick-btn export-user-quick-btn" data-range="custom" onclick="aplicarFiltroRapidoUser(this, 'custom')">Personalizado</button>
+                    </div>
+                    <div class="export-date-range" id="export-user-date-range" style="display:none;">
+                        <div class="export-date-field">
+                            <label for="export-user-data-de">De</label>
+                            <input type="date" id="export-user-data-de" onchange="atualizarPreviewExportUser()">
+                        </div>
+                        <div class="export-date-sep"><i class="fas fa-arrow-right"></i></div>
+                        <div class="export-date-field">
+                            <label for="export-user-data-ate">Até</label>
+                            <input type="date" id="export-user-data-ate" onchange="atualizarPreviewExportUser()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILTROS -->
+                <div class="export-section">
+                    <div class="export-section__title">
+                        <i class="fas fa-sliders"></i>
+                        Filtros Adicionais
+                    </div>
+                    <div class="export-filters-row">
+                        <div class="export-filter-item">
+                            <label for="export-user-filtro-status">Status</label>
+                            <select id="export-user-filtro-status" onchange="atualizarPreviewExportUser()">
+                                <option value="">Todas</option>
+                                <option value="pendente">Em Andamento</option>
+                                <option value="realizado">Realizadas</option>
+                                <option value="sem-solucao">Sem Solução</option>
+                            </select>
+                        </div>
+                        <div class="export-filter-item">
+                            <label for="export-user-filtro-prioridade">Prioridade</label>
+                            <select id="export-user-filtro-prioridade" onchange="atualizarPreviewExportUser()">
+                                <option value="">Todas</option>
+                                <option value="critico">Crítico</option>
+                                <option value="medio">Médio</option>
+                                <option value="basico">Básico</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PREVIEW -->
+                <div class="export-preview" id="export-user-preview">
+                    <i class="fas fa-table-list export-preview__icon"></i>
+                    <div class="export-preview__info">
+                        <span class="export-preview__count" id="export-user-count">0</span>
+                        <span class="export-preview__label">registros encontrados</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="modal-box__footer export-footer">
+                <button class="btn btn--ghost" onclick="fecharModalExportarUser()">Cancelar</button>
+                <div class="export-btns-group">
+                    <button class="btn btn--export-csv" onclick="exportarUserCSV()" id="btn-export-user-csv">
+                        <i class="fas fa-file-csv"></i> CSV
+                    </button>
+                    <button class="btn btn--export-excel" onclick="exportarUserExcel()" id="btn-export-user-excel">
+                        <i class="fas fa-file-excel"></i> Excel
+                    </button>
+                    <button class="btn btn--export-pdf" onclick="exportarUserPDF()" id="btn-export-user-pdf">
+                        <i class="fas fa-file-pdf"></i> PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal de visualização de imagem em tela cheia -->
     <div id="modal-imagem-full" class="modal-overlay" style="display:none;" onclick="fecharImagemFull()" role="dialog" aria-modal="true">
         <div class="modal-imagem-container" onclick="event.stopPropagation()">
@@ -573,6 +715,8 @@
     </div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="js/app.js"></script>
     <script>
         function selectTab(btn) {

@@ -2599,10 +2599,40 @@ select {
     border-color: rgba(16, 185, 129, .6);
 }
 
+.btn--export-pdf {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    font-family: var(--font);
+    font-size: .85rem;
+    font-weight: 500;
+    background: rgba(239, 68, 68, .12);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, .4);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--dur) var(--ease);
+}
+
+.btn--export-pdf:hover {
+    background: rgba(239, 68, 68, .22);
+    border-color: rgba(239, 68, 68, .6);
+}
+
 .btn--export-csv:disabled,
-.btn--export-excel:disabled {
+.btn--export-excel:disabled,
+.btn--export-pdf:disabled {
     opacity: .45;
     cursor: not-allowed;
+}
+
+.filter-count {
+    font-size: .82rem;
+    color: var(--text-3);
+    margin-left: auto;
+    align-self: center;
+    white-space: nowrap;
 }
 
 @media (max-width: 640px) {
@@ -2628,9 +2658,15 @@ select {
     }
 
     .btn--export-csv,
-    .btn--export-excel {
+    .btn--export-excel,
+    .btn--export-pdf {
         flex: 1;
         justify-content: center;
+    }
+
+    .filter-count {
+        margin-left: 0;
+        width: 100%;
     }
 }
 
