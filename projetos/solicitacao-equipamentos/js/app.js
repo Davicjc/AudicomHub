@@ -562,6 +562,7 @@ async function salvarSolicitacao() {
     const itens  = lerItensForm();
     if (!titulo)      return showToast('Informe o título da solicitação.', 'error');
     if (!itens.length) return showToast('Adicione ao menos um item.', 'error');
+    if (!_aprovSel.length) return showToast('Selecione ao menos um aprovador / destinatário.', 'error');
 
     const btn = document.getElementById('btnSalvarNova');
     btn.disabled = true;
