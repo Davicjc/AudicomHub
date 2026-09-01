@@ -381,6 +381,61 @@
           </div>
         </div>
 
+        <!-- Card: Integração Telegram -->
+        <div class="glass" style="padding:24px">
+          <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:6px">
+            <div style="font-size:20px">✈️</div>
+            <div>
+              <h3 style="margin:0 0 6px;font-size:15px;font-weight:600;color:var(--text)">Integração Telegram</h3>
+              <p class="text-muted text-sm" style="margin:0">Dispara a lista de solicitações <strong>pendentes</strong> num grupo do Telegram — agrupadas por prioridade, com quem abriu, quem está envolvido, data e valor. Usada pelo sistema de <em>Solicitação de Equipamentos</em>: envia automaticamente a cada nova solicitação. O <strong>token é sensível</strong> — guardado fora de <code>config/</code>.</p>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px;max-width:560px">
+            <div class="form-group">
+              <label>Token do bot (obtido no @BotFather)</label>
+              <div class="config-value-wrap">
+                <input type="password" id="tg-token" class="input config-value" placeholder="123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+                <button type="button" class="config-eye" onclick="toggleEye('tg-token', null)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Chat ID do grupo</label>
+              <div style="display:flex;gap:8px;align-items:stretch">
+                <input type="text" id="tg-chat-id" class="input" placeholder="-1001234567890" autocomplete="off" style="flex:1">
+                <button class="btn btn-ghost btn-sm" onclick="detectarChatIdTelegram()" title="Detectar pelas mensagens recentes do bot" style="white-space:nowrap">Detectar</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Nome do grupo (só um rótulo, opcional)</label>
+              <input type="text" id="tg-grupo-nome" class="input" placeholder="Ex: Compras Audicom" autocomplete="off">
+            </div>
+
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+              <input type="checkbox" id="tg-ativo" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
+              <span class="text-sm" style="color:var(--text)">Integração ativa<br><span class="text-muted">Se estiver desligada, nenhuma mensagem é enviada ao Telegram.</span></span>
+            </label>
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+              <input type="checkbox" id="tg-auto" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
+              <span class="text-sm" style="color:var(--text)">Enviar automaticamente ao criar uma solicitação<br><span class="text-muted">Sempre que alguém abrir um pedido, o grupo recebe a lista atualizada de pendentes.</span></span>
+            </label>
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+              <input type="checkbox" id="tg-silenciar" style="margin-top:3px;width:16px;height:16px;flex-shrink:0">
+              <span class="text-sm" style="color:var(--text)">Silenciar o envio automático<br><span class="text-muted">O envio automático entra no grupo sem tocar o celular. O botão “Notificar agora” abaixo sempre notifica todo mundo.</span></span>
+            </label>
+
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px">
+              <button class="btn btn-primary btn-sm" onclick="salvarConfigTelegram()">Salvar configuração</button>
+              <button class="btn btn-ghost btn-sm" onclick="testarTelegram()">Testar conexão</button>
+              <button class="btn btn-ghost btn-sm" onclick="notificarTelegramManual()">✈️ Notificar agora</button>
+              <span id="tg-status" class="text-sm" style="min-height:16px"></span>
+            </div>
+            <p class="text-muted text-sm" style="margin:0"><strong>“Notificar agora”</strong> reenvia a lista de pendentes e <strong>dispara uma notificação</strong> no celular de todas as pessoas do grupo (pede confirmação antes). Antes de ativar: fale com o <code>@BotFather</code> (<code>/newbot</code>), adicione o bot ao grupo, mande uma mensagem lá e clique em <strong>Detectar</strong>.</p>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -691,6 +746,7 @@
       carregarUsuarios();
       carregarConfig();
       carregarConfigHubsoft();
+      carregarConfigTelegram();
     });
 
     async function autoSeed() {
@@ -1521,6 +1577,212 @@
         showToast('Credenciais HubSoft salvas.', 'success');
       } catch (err) {
         showToast('Erro ao salvar: ' + err.message, 'error');
+      }
+    }
+
+    /* ─── INTEGRAÇÃO TELEGRAM (config + notificar; token sensível, coleção própria) ───
+       Config gravada em telegram-equipamentos/config (write só admin). O sistema de
+       Solicitação de Equipamentos LÊ essa config e dispara automaticamente ao criar um
+       pedido. Aqui, além de configurar, dá para "Notificar agora" (reenvia com push). */
+    const TG_API_ADM = 'https://api.telegram.org/bot';
+    const TG_MAX_ITENS_ADM = 40;
+    const TG_PRIOR_ADM = {
+      urgente: { emoji: '🔴', label: 'URGENTE', ordem: 0 },
+      alta:    { emoji: '🟠', label: 'ALTA',    ordem: 1 },
+      media:   { emoji: '🟡', label: 'MÉDIA',   ordem: 2 },
+      baixa:   { emoji: '🟢', label: 'BAIXA',   ordem: 3 }
+    };
+    const TG_STATUS_MANUAIS_ADM = ['comprada', 'recebida', 'cancelada'];
+    let _tgCfgAdm = null;
+
+    function tgEsc(str) {   // escape p/ parse_mode HTML do Telegram (só < > &)
+      return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function tgMoeda(v) {
+      return (Number(v) || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+    }
+    function tgTotal(sol) {
+      return (sol.itens || []).reduce((s, it) => s + (Number(it.valorUnit)||0) * (Number(it.qtd)||0), 0);
+    }
+    function tgStatusEfetivo(sol) {   // espelha statusEfetivo() do app.js
+      if (TG_STATUS_MANUAIS_ADM.includes(sol.status)) return sol.status;
+      const aprovs = sol.aprovadores || [];
+      if (aprovs.some(a => a.status === 'reprovado')) return 'reprovada';
+      if (aprovs.length && aprovs.every(a => a.status === 'aprovado')) return 'aprovada';
+      return 'pendente';
+    }
+    function tgDataCurta(ts) {
+      if (!ts) return '—';
+      const d = ts.toDate ? ts.toDate() : new Date(ts);
+      if (isNaN(d.getTime())) return '—';
+      return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+    }
+
+    async function carregarConfigTelegram() {
+      try {
+        const snap = await db.collection('telegram-equipamentos').doc('config').get();
+        const c = snap.exists ? snap.data() : {};
+        _tgCfgAdm = snap.exists ? c : null;
+        document.getElementById('tg-token').value      = c.botToken || '';
+        document.getElementById('tg-chat-id').value     = c.chatId || '';
+        document.getElementById('tg-grupo-nome').value  = c.grupoNome || '';
+        document.getElementById('tg-ativo').checked      = !!c.ativo;
+        document.getElementById('tg-auto').checked       = c.autoAoCriar !== false;   // default ligado
+        document.getElementById('tg-silenciar').checked  = c.silenciarAuto === true;  // default desligado
+        tgStatusAdm();
+      } catch (err) {
+        console.warn('Não foi possível ler a config do Telegram:', err.message);
+      }
+    }
+
+    function tgStatusAdm() {
+      const el = document.getElementById('tg-status');
+      if (!el) return;
+      const c = _tgCfgAdm;
+      if (!c || !c.botToken || !c.chatId) { el.textContent = ''; return; }
+      const grupo = c.grupoNome || ('chat ' + c.chatId);
+      el.style.color = c.ativo ? '#10b981' : '#94a3b8';
+      el.textContent = c.ativo ? `● Ativo — ${grupo}` : `○ Inativo — ${grupo}`;
+    }
+
+    async function salvarConfigTelegram() {
+      const dados = {
+        botToken:      document.getElementById('tg-token').value.trim(),
+        chatId:        document.getElementById('tg-chat-id').value.trim(),
+        grupoNome:     document.getElementById('tg-grupo-nome').value.trim(),
+        ativo:         document.getElementById('tg-ativo').checked,
+        autoAoCriar:   document.getElementById('tg-auto').checked,
+        silenciarAuto: document.getElementById('tg-silenciar').checked,
+        atualizadoPor: (currentAdmin && currentAdmin.email) || '',
+        atualizadoEm:  firebase.firestore.FieldValue.serverTimestamp()
+      };
+      if (dados.ativo && (!dados.botToken || !dados.chatId)) {
+        showToast('Informe o token e o Chat ID para ativar a integração.', 'error');
+        return;
+      }
+      try {
+        await db.collection('telegram-equipamentos').doc('config').set(dados, { merge: true });
+        _tgCfgAdm = dados;
+        tgStatusAdm();
+        showToast('Configuração do Telegram salva.', 'success');
+      } catch (err) {
+        const perm = /permission|insufficient/i.test(err.message || '');
+        showToast('Erro ao salvar: ' + err.message + (perm ? ' — publique a regra telegram-equipamentos.' : ''), 'error');
+      }
+    }
+
+    async function tgEnviar(text, { silencioso = false, cfg = null } = {}) {
+      const c = cfg || _tgCfgAdm || {};
+      if (!c.botToken || !c.chatId) return { ok: false, erro: 'Token ou Chat ID não configurados.' };
+      try {
+        const resp = await fetch(`${TG_API_ADM}${c.botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: c.chatId, text, parse_mode: 'HTML', disable_web_page_preview: true, disable_notification: !!silencioso })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) return { ok: false, erro: data.description || ('HTTP ' + resp.status) };
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, erro: err.message || String(err) };
+      }
+    }
+
+    async function testarTelegram() {
+      const token  = document.getElementById('tg-token').value.trim();
+      const chatId = document.getElementById('tg-chat-id').value.trim();
+      if (!token || !chatId) { showToast('Preencha o token e o Chat ID para testar.', 'error'); return; }
+      const r = await tgEnviar(
+        `✅ <b>Teste de integração</b>\nO grupo está conectado ao sistema de Solicitação de Equipamentos da Audicom.\n🗓 ${tgEsc(new Date().toLocaleString('pt-BR'))}`,
+        { silencioso: true, cfg: { botToken: token, chatId } });
+      if (r.ok) showToast('Mensagem de teste enviada. Confira o grupo.', 'success');
+      else      showToast('Falha no teste: ' + r.erro, 'error');
+    }
+
+    async function detectarChatIdTelegram() {
+      const token = document.getElementById('tg-token').value.trim();
+      if (!token) { showToast('Preencha o token do bot primeiro.', 'error'); return; }
+      try {
+        const resp = await fetch(`${TG_API_ADM}${token}/getUpdates`);
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.description || 'Resposta inválida');
+        const chats = [];
+        (data.result || []).forEach(u => {
+          const chat = (u.message || u.channel_post || u.my_chat_member || {}).chat;
+          if (chat && !chats.some(c => c.id === chat.id)) chats.push(chat);
+        });
+        const grupo = chats.find(c => c.type === 'group' || c.type === 'supergroup') || chats[0];
+        if (!grupo) { showToast('Nenhuma conversa encontrada. Mande uma mensagem no grupo (com o bot dentro) e tente de novo.', 'error'); return; }
+        document.getElementById('tg-chat-id').value = grupo.id;
+        const nomeEl = document.getElementById('tg-grupo-nome');
+        if (grupo.title && !nomeEl.value) nomeEl.value = grupo.title;
+        showToast('Chat detectado: ' + (grupo.title || grupo.id), 'success');
+      } catch (err) {
+        showToast('Falha ao detectar: ' + (err.message || err), 'error');
+      }
+    }
+
+    // Busca as pendentes (não deletadas + status efetivo "pendente").
+    async function tgBuscarPendentes() {
+      const snap = await db.collection('solicitacoes-equipamentos').orderBy('criadoEm', 'desc').get();
+      const lista = [];
+      snap.forEach(d => {
+        const s = { id: d.id, ...d.data() };
+        if (s.deletado === true) return;
+        if (tgStatusEfetivo(s) !== 'pendente') return;
+        lista.push(s);
+      });
+      return lista;
+    }
+
+    // Monta a mensagem HTML (agrupada por prioridade; descarta itens inteiros
+    // ao encostar no limite de 4096 chars — nunca corta no meio de uma tag).
+    function tgMontarMensagem(pendentes) {
+      const agora = new Date().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      if (!pendentes.length) return `📋 <b>SOLICITAÇÕES PENDENTES — Audicom</b>\n🗓 ${tgEsc(agora)}\n\n✅ Nenhuma solicitação pendente no momento.`;
+      const valorTotal = pendentes.reduce((a, s) => a + tgTotal(s), 0);
+      const cabecalho = `📋 <b>SOLICITAÇÕES PENDENTES — Audicom</b>\n🗓 Atualizado em ${tgEsc(agora)}\n📌 Total: <b>${pendentes.length}</b> pendente(s) · 💰 ${tgEsc(tgMoeda(valorTotal))}\n`;
+      const ord = pendentes.slice().sort((a, b) => (TG_PRIOR_ADM[a.prioridade]?.ordem ?? 2) - (TG_PRIOR_ADM[b.prioridade]?.ordem ?? 2));
+      const LIMITE = 4000, RESERVA = 40;
+      const SEP = '________________________';   // traço separando as categorias
+      let corpo = '', priorAtual = null, incluidos = 0;
+      for (let i = 0; i < ord.length && incluidos < TG_MAX_ITENS_ADM; i++) {
+        const s = ord[i];
+        const pr = TG_PRIOR_ADM[s.prioridade] || TG_PRIOR_ADM.media;
+        const de = tgEsc(s.criadoPorNome || s.criadoPor || '—');
+        const envolvidos = (s.aprovadores || []).map(a => tgEsc(a.nome || a.email)).join(', ') || 'ninguém definido';
+        const nItens = (s.itens || []).length;
+        let bloco = '';
+        if (pr.label !== priorAtual) {
+          bloco += (priorAtual === null) ? `\n` : `${SEP}\n\n`;   // linha separando categorias
+          bloco += `${pr.emoji} <b>${pr.label}</b>\n`;
+        }
+        bloco += `☐ <b>${tgEsc(s.titulo || 'Sem título')}</b>\n`;
+        bloco += `   👤 De: ${de}\n`;
+        bloco += `   👥 Envolvidos: ${envolvidos}\n`;
+        bloco += `   🗓 Criado em ${tgEsc(tgDataCurta(s.criadoEm))} · 🧾 ${nItens} ${nItens === 1 ? 'item' : 'itens'} · 💰 ${tgEsc(tgMoeda(tgTotal(s)))}\n`;
+        bloco += `\n`;   // linha em branco entre as compras
+        if (cabecalho.length + corpo.length + bloco.length + RESERVA > LIMITE) break;
+        corpo += bloco; priorAtual = pr.label; incluidos++;
+      }
+      const restante = ord.length - incluidos;
+      let msg = (cabecalho + corpo).replace(/\n+$/, '');   // remove a sobra em branco no fim
+      if (restante > 0) msg += `\n\n… e mais ${restante} pendente(s).`;
+      return msg;
+    }
+
+    async function notificarTelegramManual() {
+      const c = _tgCfgAdm;
+      if (!c || !c.botToken || !c.chatId) { showToast('Configure o token e o Chat ID antes de notificar.', 'error'); return; }
+      if (!c.ativo) { showToast('Ative a integração antes de notificar.', 'error'); return; }
+      if (!confirm('Isto vai disparar uma NOTIFICAÇÃO no celular de todas as pessoas do grupo do Telegram, com a lista atualizada de pendentes.\n\nDeseja continuar?')) return;
+      try {
+        const pendentes = await tgBuscarPendentes();
+        const r = await tgEnviar(tgMontarMensagem(pendentes), { silencioso: false });
+        if (r.ok) showToast('Notificação enviada ao grupo.', 'success');
+        else      showToast('Falha ao notificar: ' + r.erro, 'error');
+      } catch (err) {
+        showToast('Erro ao notificar: ' + (err.message || err), 'error');
       }
     }
 

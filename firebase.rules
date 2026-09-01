@@ -411,6 +411,15 @@ service cloud.firestore {
       allow read:                   if temProjeto('solicitacao-equipamentos');
       allow create, update, delete: if pode('solicitacao-equipamentos', 'gerenciarProdutos', false);
     }
+    // Integração Telegram do projeto — o bot token é SECRETO. Fica FORA de
+    // config/ (que é legível por QUALQUER membro ativo, inclusive clientes
+    // de ronda). Aqui a leitura exige o projeto solicitacao-equipamentos
+    // (o front precisa do token no navegador p/ disparar a mensagem ao
+    // criar/notificar); a escrita (gravar/alterar as credenciais) é só admin.
+    match /telegram-equipamentos/{doc} {
+      allow read:  if temProjeto('solicitacao-equipamentos');
+      allow write: if isAdmin();
+    }
 
     // Lixeiras dos projetos acima (coleções top-level):
     //   create -> moverLixeira | update -> restaurar | delete -> apagarPermanente

@@ -7,10 +7,13 @@
 const COL_NAME     = 'solicitacoes-equipamentos';
 const LIXEIRA_NAME = 'lixeira-solicitacao-equipamentos';
 const PROD_NAME    = 'produtos-equipamentos';
+const TELEGRAM_COL = 'telegram-equipamentos';   // coleção própria (token = secreto)
+const TELEGRAM_DOC = 'config';
 const COL     = () => db.collection(COL_NAME);
 const LIXEIRA = () => db.collection(LIXEIRA_NAME);
 const PROD    = () => db.collection(PROD_NAME);
 const MSGS    = (id) => COL().doc(id).collection('mensagens');
+const TELEGRAM = () => db.collection(TELEGRAM_COL).doc(TELEGRAM_DOC);
 
 // Anexo máximo (base64) — mantém cada doc de mensagem abaixo de ~1MB.
 const MAX_ANEXO_KB = 900;
@@ -32,6 +35,7 @@ let _chatAnexo = null;      // {tipo, base64, nome, sizeKB}
 let _listaUnsub = null;
 let _prodEditId = null;     // produto em edição no catálogo
 let _prodErro   = null;     // mensagem de erro ao carregar o catálogo
+let _telegramCfg = null;    // { botToken, chatId, grupoNome, ativo, autoAoCriar, silenciarAuto } — gerido no admin.html
 
 // ── Status ────────────────────────────────────────────────────
 const STATUS_LABEL = {
@@ -123,6 +127,7 @@ function souParticipante(sol) {
 function iniciarApp() {
     carregarUsuarios();
     carregarProdutos();
+    carregarConfigTelegram();
     // Escuta em tempo real todas as solicitações (ordenadas por data).
     _listaUnsub = COL().orderBy('criadoEm', 'desc').onSnapshot(snap => {
         _todas = [];
@@ -593,6 +598,9 @@ async function salvarSolicitacao() {
             const nomesAprov = _aprovSel.map(a => a.nome || a.email).join(', ');
             await registrarLog(ref.id, `abriu a solicitação${nomesAprov ? ` e enviou para: ${nomesAprov}` : ''}`, 'fa-flag-checkered');
             showToast('Solicitação criada ✓', 'success');
+            // Dispara a lista de pendentes no Telegram (best-effort — nunca
+            // bloqueia a criação; respeita ativo/autoAoCriar/silenciarAuto).
+            dispararPendentesTelegram({ automatico: true }).catch(() => {});
         }
         fecharModalNova();
     } catch (err) {
@@ -969,6 +977,158 @@ async function enviarMensagem() {
     } finally {
         btn.disabled = false;
     }
+}
+
+// ================================================================
+// INTEGRAÇÃO TELEGRAM — DISPARO AUTOMÁTICO
+// Ao criar uma solicitação, manda a lista de PENDENTES para um grupo do
+// Telegram (agrupadas por prioridade, com quem abriu, quem está envolvido,
+// data e valor). A CONFIGURAÇÃO (token/chat/toggles) e o botão manual
+// "Notificar" ficam no painel Admin do Hub (admin.html › Ferramentas),
+// ao lado do HubSoft. Aqui só lemos a config e disparamos no create.
+// Tudo client-side (sem backend), via Bot API + fetch.
+// ================================================================
+const TG_API = 'https://api.telegram.org/bot';
+const TG_MAX_ITENS = 40;      // teto de itens listados na mensagem
+const TG_PRIOR = {
+    urgente: { emoji: '🔴', label: 'URGENTE', ordem: 0 },
+    alta:    { emoji: '🟠', label: 'ALTA',    ordem: 1 },
+    media:   { emoji: '🟡', label: 'MÉDIA',   ordem: 2 },
+    baixa:   { emoji: '🟢', label: 'BAIXA',   ordem: 3 }
+};
+
+// Carrega (e mantém atualizada) a config gravada no admin.html.
+function carregarConfigTelegram() {
+    TELEGRAM().onSnapshot(doc => {
+        _telegramCfg = doc.exists ? doc.data() : null;
+    }, err => {
+        console.warn('Config do Telegram indisponível:', err);
+    });
+}
+
+// Escape p/ parse_mode HTML do Telegram (só < > &).
+function escapeTelegram(str) {
+    return String(str == null ? '' : str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function dataCriacaoCurta(ts) {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+
+// Busca FRESCA das pendentes (garante incluir a que acabou de ser criada —
+// read-your-writes: um get logo após o add já enxerga o novo doc). Filtra
+// `deletado` no cliente p/ não exigir índice composto (igual ao listener).
+async function buscarPendentes() {
+    const snap = await COL().orderBy('criadoEm', 'desc').get();
+    const lista = [];
+    snap.forEach(d => {
+        const s = { id: d.id, ...d.data() };
+        if (s.deletado === true) return;
+        if (statusEfetivo(s) !== 'pendente') return;
+        lista.push(s);
+    });
+    return lista;
+}
+
+// Monta a mensagem (HTML) com todas as pendentes agrupadas por prioridade,
+// mostrando quem abriu, quem está envolvido, data e valor.
+function montarMensagemPendentes(pendentes) {
+    const agora = new Date().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    if (!pendentes.length) {
+        return `📋 <b>SOLICITAÇÕES PENDENTES — Audicom</b>\n🗓 ${escapeTelegram(agora)}\n\n✅ Nenhuma solicitação pendente no momento.`;
+    }
+    const valorTotal = pendentes.reduce((a, s) => a + totalSolicitacao(s), 0);
+    const cabecalho = `📋 <b>SOLICITAÇÕES PENDENTES — Audicom</b>\n`
+        + `🗓 Atualizado em ${escapeTelegram(agora)}\n`
+        + `📌 Total: <b>${pendentes.length}</b> pendente(s) · 💰 ${escapeTelegram(moeda(valorTotal))}\n`;
+
+    // Ordena por prioridade (urgente→baixa); dentro dela mantém a ordem por
+    // data (a lista já chega ordenada por criadoEm desc → mais recente 1º).
+    const ord = pendentes.slice().sort((a, b) => {
+        const pa = TG_PRIOR[a.prioridade]?.ordem ?? 2;
+        const pb = TG_PRIOR[b.prioridade]?.ordem ?? 2;
+        return pa - pb;
+    });
+
+    // Monta bloco a bloco respeitando o limite de 4096 chars do Telegram.
+    // Descarta ITENS INTEIROS quando o orçamento acaba — nunca corta uma
+    // string no meio de uma tag HTML (isso faria o sendMessage falhar com
+    // "can't parse entities" e derrubaria o envio todo).
+    const LIMITE = 4000;
+    const RESERVA_RODAPE = 40;   // espaço p/ "… e mais N pendente(s)."
+    const SEP = '________________________';   // traço separando as categorias
+    let corpo = '';
+    let priorAtual = null;
+    let incluidos = 0;
+    for (let i = 0; i < ord.length && incluidos < TG_MAX_ITENS; i++) {
+        const s = ord[i];
+        const pr = TG_PRIOR[s.prioridade] || TG_PRIOR.media;
+        const total = totalSolicitacao(s);
+        const de = escapeTelegram(s.criadoPorNome || s.criadoPor || '—');
+        const envolvidos = (s.aprovadores || []).map(a => escapeTelegram(a.nome || a.email)).join(', ') || 'ninguém definido';
+        const nItens = (s.itens || []).length;
+        let bloco = '';
+        if (pr.label !== priorAtual) {
+            bloco += (priorAtual === null) ? `\n` : `${SEP}\n\n`;   // linha separando categorias
+            bloco += `${pr.emoji} <b>${pr.label}</b>\n`;
+        }
+        bloco += `☐ <b>${escapeTelegram(s.titulo || 'Sem título')}</b>\n`;
+        bloco += `   👤 De: ${de}\n`;
+        bloco += `   👥 Envolvidos: ${envolvidos}\n`;
+        bloco += `   🗓 Criado em ${escapeTelegram(dataCriacaoCurta(s.criadoEm))} · 🧾 ${nItens} ${nItens === 1 ? 'item' : 'itens'} · 💰 ${escapeTelegram(moeda(total))}\n`;
+        bloco += `\n`;   // linha em branco entre as compras
+
+        // Se este bloco estourar o orçamento, para (mantém o HTML íntegro).
+        if (cabecalho.length + corpo.length + bloco.length + RESERVA_RODAPE > LIMITE) break;
+        corpo += bloco;
+        priorAtual = pr.label;   // só "abre" a prioridade quando o bloco entra
+        incluidos++;
+    }
+
+    const restante = ord.length - incluidos;
+    let msg = (cabecalho + corpo).replace(/\n+$/, '');   // remove a sobra em branco no fim
+    if (restante > 0) msg += `\n\n… e mais ${restante} pendente(s).`;
+    return msg;
+}
+
+// Chama a Bot API (sendMessage). cfg opcional permite testar valores ainda
+// não salvos sem tocar no estado global. Retorna { ok, erro }.
+async function tgSendMessage(text, { silencioso = false, cfg = null } = {}) {
+    const c = cfg || _telegramCfg || {};
+    if (!c.botToken || !c.chatId) return { ok: false, erro: 'Bot token ou Chat ID não configurados.' };
+    try {
+        const resp = await fetch(`${TG_API}${c.botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: c.chatId,
+                text,
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+                disable_notification: !!silencioso
+            })
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.ok) return { ok: false, erro: data.description || `HTTP ${resp.status}` };
+        return { ok: true };
+    } catch (err) {
+        return { ok: false, erro: err.message || String(err) };
+    }
+}
+
+// Orquestra o envio das pendentes. automatico=true respeita as flags de
+// config (ativo/autoAoCriar/silenciarAuto). Manual sempre notifica (loud).
+async function dispararPendentesTelegram({ automatico = false } = {}) {
+    const c = _telegramCfg;
+    if (!c || !c.ativo || !c.botToken || !c.chatId) return { ok: false, erro: 'Integração inativa ou não configurada.' };
+    if (automatico && c.autoAoCriar === false)      return { ok: false, erro: 'Envio automático desligado.' };
+    const pendentes = await buscarPendentes();
+    const texto = montarMensagemPendentes(pendentes);
+    const silencioso = automatico ? (c.silenciarAuto === true) : false;
+    return tgSendMessage(texto, { silencioso });
 }
 
 // ================================================================
