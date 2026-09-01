@@ -1035,10 +1035,11 @@ async function buscarPendentes() {
 
 // Monta a mensagem (HTML) com todas as pendentes agrupadas por prioridade,
 // mostrando quem abriu, quem está envolvido, data e valor.
+const TG_LINK_HUB = `\n\n🔗 <a href="https://hub.audicomtelecom.com.br/projetos/solicitacao-equipamentos/index.html">Ver mais detalhes no Hub</a>`;
 function montarMensagemPendentes(pendentes) {
     const agora = new Date().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
     if (!pendentes.length) {
-        return `📋 <b>SOLICITAÇÕES PENDENTES — Audicom</b>\n🗓 ${escapeTelegram(agora)}\n\n✅ Nenhuma solicitação pendente no momento.`;
+        return `📋 <b>SOLICITAÇÕES PENDENTES — Audicom</b>\n🗓 ${escapeTelegram(agora)}\n\n✅ Nenhuma solicitação pendente no momento.${TG_LINK_HUB}`;
     }
     const valorTotal = pendentes.reduce((a, s) => a + totalSolicitacao(s), 0);
     const cabecalho = `📋 <b>SOLICITAÇÕES PENDENTES — Audicom</b>\n`
@@ -1058,7 +1059,7 @@ function montarMensagemPendentes(pendentes) {
     // string no meio de uma tag HTML (isso faria o sendMessage falhar com
     // "can't parse entities" e derrubaria o envio todo).
     const LIMITE = 4000;
-    const RESERVA_RODAPE = 40;   // espaço p/ "… e mais N pendente(s)."
+    const RESERVA_RODAPE = 40 + TG_LINK_HUB.length;   // espaço p/ "… e mais N pendente(s)." + link do Hub
     const SEP = '________________________';   // traço separando as categorias
     let corpo = '';
     let priorAtual = null;
@@ -1091,6 +1092,7 @@ function montarMensagemPendentes(pendentes) {
     const restante = ord.length - incluidos;
     let msg = (cabecalho + corpo).replace(/\n+$/, '');   // remove a sobra em branco no fim
     if (restante > 0) msg += `\n\n… e mais ${restante} pendente(s).`;
+    msg += TG_LINK_HUB;
     return msg;
 }
 
