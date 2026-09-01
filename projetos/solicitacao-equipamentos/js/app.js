@@ -1133,6 +1133,27 @@ async function dispararPendentesTelegram({ automatico = false } = {}) {
     return tgSendMessage(texto, { silencioso });
 }
 
+// Botão "Enviar para Telegram" (toolbar de Minhas Solicitações / Visão Adm).
+// Reenvia a lista de TODAS as pendentes p/ o grupo — mesmo para usuário comum
+// que só vê as próprias solicitações (a mensagem sempre cobre todo mundo).
+async function enviarTelegramManual() {
+    const c = _telegramCfg;
+    if (!c || !c.botToken || !c.chatId) { showToast('Integração com o Telegram ainda não configurada pelo admin.', 'error'); return; }
+    if (!c.ativo) { showToast('Integração com o Telegram está desativada.', 'error'); return; }
+    if (!confirm('Isto vai notificar o grupo do Telegram com a lista atualizada de TODAS as solicitações pendentes.\n\nDeseja continuar?')) return;
+    const btn = document.getElementById('btnTelegram');
+    if (btn) btn.disabled = true;
+    try {
+        const r = await dispararPendentesTelegram({ automatico: false });
+        if (r.ok) showToast('Lista de pendentes enviada ao Telegram ✓', 'success');
+        else      showToast('Falha ao enviar: ' + (r.erro || 'erro desconhecido'), 'error');
+    } catch (err) {
+        showToast('Falha ao enviar: ' + (err.message || String(err)), 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 // ================================================================
 // LIXEIRA (soft-delete)
 // ================================================================

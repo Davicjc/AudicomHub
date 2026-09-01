@@ -595,6 +595,16 @@ body {
 .met-demo-btn:hover { background: rgba(192,132,252,0.16); border-color: #c084fc; }
 .met-demo-btn.ativo { background: #c084fc; border-style: solid; border-color: #c084fc; color: #1a0f2e; }
 
+/* Botão "Enviar para Telegram" na toolbar da lista (minhas / visão adm) */
+.btn-telegram {
+    display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 8px;
+    border: 1px solid rgba(41,171,226,0.45); background: rgba(41,171,226,0.10);
+    color: #29abe2; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600;
+    transition: var(--ease); white-space: nowrap;
+}
+.btn-telegram:hover { background: rgba(41,171,226,0.20); border-color: #29abe2; }
+.btn-telegram:disabled { opacity: .6; cursor: progress; }
+
 /* KPI cards */
 .kpi-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
