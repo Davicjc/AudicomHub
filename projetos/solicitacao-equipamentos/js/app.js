@@ -385,6 +385,7 @@ function cardHTML(sol) {
             </div>
             <div class="sol-total">${moeda(total)}</div>
         </div>
+        <div class="sol-card-acts">${btnImprimirHTML(sol, 'sol-card-print')}</div>
     </div>`;
 }
 
@@ -732,6 +733,7 @@ function renderDetalheMain(sol) {
     const acoesTopo = `
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
             <button class="lixeira-btn-action" onclick="preVisualizar('${sol.id}')"><i class="fas fa-up-right-from-square"></i> Pré-visualizar</button>
+            ${btnImprimirHTML(sol, 'lixeira-btn-action')}
             ${podeEditar ? `<button class="lixeira-btn-action" onclick="editarSolicitacao('${sol.id}')"><i class="fas fa-pen"></i> Editar</button>` : ''}
             ${podeExcluir ? `<button class="lixeira-btn-action lixeira-btn-del" onclick="moverParaLixeira('${sol.id}')"><i class="fas fa-trash"></i> Mover p/ lixeira</button>` : ''}
         </div>`;
@@ -1995,6 +1997,390 @@ function gerarHtmlPreview(sol) {
 
     ${imgs ? `<h2>Imagens</h2><div class="imgs">${imgs}</div>` : ''}
   </div>
+</body></html>`;
+}
+
+// ================================================================
+// IMPRESSÃO — folha A4 com os links dos itens em QR Code
+//
+// A folha é um HTML autossuficiente aberto em nova guia: nada de
+// script, fonte ou imagem externa lá dentro, porque o QR já vai
+// desenhado como SVG. Assim a impressão sai igual em qualquer
+// máquina, inclusive sem internet.
+// ================================================================
+
+// Parâmetros de rastreio que marketplace pendura na URL. Não abrem nada:
+// só engordam o link e, com ele, a versão do QR.
+const QR_PARAM_LIXO = /^(utm_|gclid|fbclid|gbraid|wbraid|gad_|msclkid|mc_|pk_|igshid|ref$|ref_|_ref$|tag$|linkcode|ascsubtag|creative|creativeasin|camp$|psc$|th$|smid$|qid$|sr$|sprefix|keywords$|dib|content-id|pd_rd_|pf_rd_|_encoding|spm$|scm|aff|algo_|btsid|ws_ab_test|pvid|sk$|sc_|matt_|trackingid|position$|search_layout|deal_id|source$|from$|share)/i;
+
+/**
+ * Enxuga o link antes de virar QR — a raiz do problema do QR ilegível.
+ * Link de marketplace chega com 200+ caracteres de rastreio, e cada
+ * caractere empurra o QR para uma versão maior: mais módulos espremidos
+ * no mesmo pedaço de papel, até virar borrão que câmera nenhuma lê.
+ * Aqui sobra o endereço do produto e nada mais.
+ */
+function limparUrlParaQr(link) {
+    const bruto = String(link || '').trim();
+    if (!bruto) return '';
+
+    let u;
+    try { u = new URL(/^[a-z]+:\/\//i.test(bruto) ? bruto : 'https://' + bruto); }
+    catch { return bruto; }                 // não é URL: vai como está
+
+    u.hash = '';                            // âncora não muda o destino
+
+    // Amazon: o produto inteiro cabe em /dp/ASIN — o resto é rastreio.
+    const asin = u.pathname.match(/\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i);
+    if (/(^|\.)amazon\./i.test(u.hostname) && asin) {
+        u.pathname = '/dp/' + asin[1].toUpperCase();
+        u.search   = '';
+    }
+
+    // AliExpress: /item/<id>.html basta.
+    const ali = u.pathname.match(/\/item\/(\d+)\.html/i);
+    if (/aliexpress\./i.test(u.hostname) && ali) {
+        u.pathname = `/item/${ali[1]}.html`;
+        u.search   = '';
+    }
+
+    // Nos demais, tira só o que se sabe ser rastreio.
+    if (u.search) {
+        [...u.searchParams.keys()].forEach(k => {
+            if (QR_PARAM_LIXO.test(k)) u.searchParams.delete(k);
+        });
+    }
+
+    // Nada além disso: o resto da query fica. Em loja pequena o produto mora
+    // em `?id=123&cor=azul`, e cortar por comprimento imprimiria um QR que
+    // lê perfeitamente e abre a página errada — pior que o QR ilegível, pois
+    // ninguém percebe conferindo o papel. Link comprido só gera QR maior.
+    return u.toString().replace(/\?$/, '').replace(/\/$/, '');
+}
+
+/**
+ * Monta o QR do texto e devolve `{ qr, n }` (n = módulos por lado), ou
+ * null se não couber. Tenta a correção M e cai para L quando o dado é
+ * grande: L guarda mais por versão e, em papel limpo e sem logo em cima,
+ * lê igual — é o que segura um link comprido numa versão pequena.
+ */
+function montarQr(dado) {
+    for (const nivel of ['M', 'L']) {
+        try {
+            const qr = qrcode(0, nivel);     // 0 = escolhe a versão pelo tamanho
+            qr.addData(dado);
+            qr.make();
+            const n = qr.getModuleCount();
+            if (nivel === 'M' && n > 45) continue;   // denso demais: tenta o L
+            return { qr, n };
+        } catch (err) { /* não coube nessa correção — tenta a próxima */ }
+    }
+    console.warn('QR não gerado para:', dado);
+    return null;
+}
+
+/**
+ * Desenha um QR já montado como SVG puro (retângulos pretos).
+ * `mm` é o lado impresso — em milímetros, para o tamanho não depender
+ * da resolução da impressora.
+ */
+function qrSvgDeQr(qr, n, mm) {
+    const quiet = 2;                     // margem branca exigida pelo padrão
+    const lado  = n + quiet * 2;
+
+    // Junta módulos escuros vizinhos numa única barra — um <rect> por
+    // sequência em vez de um por módulo deixa o SVG bem menor.
+    let barras = '';
+    for (let r = 0; r < n; r++) {
+        let c = 0;
+        while (c < n) {
+            if (!qr.isDark(r, c)) { c++; continue; }
+            let w = 1;
+            while (c + w < n && qr.isDark(r, c + w)) w++;
+            barras += `<rect x="${c + quiet}" y="${r + quiet}" width="${w}" height="1"/>`;
+            c += w;
+        }
+    }
+
+    return `<svg class="qr" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${lado} ${lado}" `
+         + `width="${mm}mm" height="${mm}mm" shape-rendering="crispEdges">`
+         + `<rect width="${lado}" height="${lado}" fill="#fff"/>`
+         + `<g fill="#000">${barras}</g></svg>`;
+}
+
+/** Endereço legível embaixo do QR (sem protocolo, cortado no fim). */
+function urlCurta(url, max = 42) {
+    const s = String(url || '').replace(/^https?:\/\//i, '').replace(/^www\./i, '');
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+/** O botão de imprimir — muda de rótulo depois da primeira impressão. */
+function btnImprimirHTML(sol, classe) {
+    const feita = !!sol.impressoEm;
+    const titulo = feita
+        ? `Impressa por ${sol.impressoPorNome || 'alguém'} · ${horaCurta(sol.impressoEm)}`
+        : 'Gera uma folha A4 com os itens e os links em QR Code';
+    return `<button class="${classe} btn-imprimir${feita ? ' ja-impressa' : ''}"
+        title="${escapeHTML(titulo)}"
+        onclick="imprimirSolicitacao('${sol.id}', event)">
+        <i class="fas ${feita ? 'fa-rotate-right' : 'fa-print'}"></i> ${feita ? 'Imprimir novamente' : 'Imprimir'}
+    </button>`;
+}
+
+/**
+ * Abre a folha e manda imprimir. A marcação em banco é best-effort: se
+ * falhar, o papel já saiu do mesmo jeito — só o rótulo do botão não muda.
+ */
+function imprimirSolicitacao(id, ev) {
+    if (ev) ev.stopPropagation();          // o card inteiro abre o detalhe
+    const sol = _todas.find(s => s.id === id);
+    if (!sol) return;
+
+    const win = window.open('', '_blank');
+    if (!win) { showToast('Permita pop-ups para imprimir.', 'error'); return; }
+    win.document.open();
+    win.document.write(gerarHtmlImpressao(sol));
+    win.document.close();
+
+    marcarImpressa(sol).catch(() => {});
+}
+
+async function marcarImpressa(sol) {
+    // Imprimir é visibilidade; marcar é ação. Quem só observa a solicitação
+    // (admin com visão total, fora dela) imprime, mas não carimba o nome
+    // dela nem escreve no chat — a mesma regra dos outros botões.
+    if (!souParticipante(sol)) return;
+
+    const primeira = !sol.impressoEm;
+    try {
+        // Data em ISO (e não serverTimestamp) para o botão virar "Imprimir
+        // novamente" já no snapshot local, sem esperar a volta do servidor.
+        await COL().doc(sol.id).update({
+            impressoEm:      new Date().toISOString(),
+            impressoPorNome: window._userNome || '',
+            impressoPorUid:  window._userUid || '',
+            nImpressoes:     (Number(sol.nImpressoes) || 0) + 1
+        });
+        // Só a primeira vale um log — reimprimir não precisa poluir o chat.
+        if (primeira) await registrarLog(sol.id, 'imprimiu a solicitação', 'fa-print');
+    } catch (err) {
+        console.warn('Não foi possível marcar como impressa:', err);
+    }
+}
+
+/**
+ * O HTML da folha. Enxuto de propósito: cabeçalho, itens com QR,
+ * aprovadores e rodapé — sem galeria de imagens — para caber numa A4.
+ * Se ainda assim passar, o próprio documento se encolhe ao carregar.
+ */
+function gerarHtmlImpressao(sol) {
+    const st    = statusEfetivo(sol);
+    const total = totalSolicitacao(sol);
+    const itens = sol.itens || [];
+
+    // Os QRs são montados ANTES do layout porque é a contagem de módulos que
+    // manda no tamanho impresso: o que a câmera lê não é o QR inteiro, é cada
+    // quadradinho. Abaixo de ~0,4 mm por módulo a impressora borra e nada é
+    // lido — então o lado sai de "quantos módulos × quanto cada um precisa
+    // medir no papel", nunca de um número fixo dividido pela quantidade.
+    const qrs = itens.map(it => {
+        const url = limparUrlParaQr(it.link);
+        if (!url) return null;
+        const m = montarQr(url);
+        return { url, qr: m && m.qr, n: (m && m.n) || 0 };
+    });
+    const nMax = qrs.reduce((mx, q) => Math.max(mx, (q && q.n) || 0), 0);
+
+    // Quanto cada módulo precisa medir no papel: folgado com poucos itens,
+    // apertado com muitos — mas o alvo é dividido pelo piso do zoom, porque
+    // a folha ainda pode encolher no fim para caber na A4 e levaria o QR
+    // junto. Assim o pior caso (folha encolhida ao máximo) continua acima
+    // dos ~0,4 mm/módulo que uma câmera de celular consegue ler.
+    const PISO_ZOOM = 0.85;
+    const alvoMm = (itens.length <= 4 ? 0.62 : itens.length <= 8 ? 0.52 : 0.44) / PISO_ZOOM;
+    const ladoQr = nMax ? Math.min(44, Math.max(16, Math.ceil(nMax * alvoMm))) : 16;
+
+    const linhas = itens.map((it, i) => {
+        const sub = (Number(it.qtd) || 0) * (Number(it.valorUnit) || 0);
+        const q   = qrs[i];
+        const qr  = q && q.qr ? qrSvgDeQr(q.qr, q.n, ladoQr) : '';
+        // Se o QR falhou ou saiu dos densos, o endereço vai inteiro embaixo:
+        // é o plano B para digitar à mão, e cortado com "…" não serve.
+        const linkTxt = q ? (!q.qr || q.n >= 45 ? q.url : urlCurta(q.url, 56)) : '';
+        return `<tr>
+            <td class="i">${i + 1}</td>
+            <td>
+                <div class="nome">${escapeHTML(it.nome || '—')}</div>
+                ${q ? `<div class="url">${escapeHTML(linkTxt)}</div>` : ''}
+            </td>
+            <td class="n">${escapeHTML(it.qtd)}</td>
+            <td class="n">${moeda(it.valorUnit)}</td>
+            <td class="n">${moeda(sub)}</td>
+            <td class="qrcel">${qr || `<span class="vazio">${q ? 'link longo demais' : 'sem link'}</span>`}</td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="6" class="vazio">Sem itens.</td></tr>';
+
+    const aprovs = (sol.aprovadores || []).map(a => {
+        const cor = a.status === 'aprovado' ? '#15803d' : a.status === 'reprovado' ? '#b91c1c' : '#b45309';
+        const lbl = a.status === 'aprovado' ? 'Aprovado'  : a.status === 'reprovado' ? 'Reprovado'  : 'Pendente';
+        return `<span class="aprov"><b>${escapeHTML(a.nome || a.email)}</b>
+            <i style="color:${cor}">${lbl}</i>${a.comentario ? ` <u>${escapeHTML(a.comentario)}</u>` : ''}</span>`;
+    }).join('') || '<span class="vazio">Nenhum aprovador definido.</span>';
+
+    const stCores = {
+        pendente:'#b45309', aprovada:'#15803d', reprovada:'#b91c1c',
+        comprada:'#1d4ed8', recebida:'#4338ca', cancelada:'#4b5563'
+    };
+    const titulo = sol.titulo || 'Solicitação';
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Solicitação — ${escapeHTML(titulo)}</title>
+<style>
+  @page { size: A4; margin: 0; }   /* na tela; a impressão redefine abaixo */
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+         color: #111827; background: #e5e7eb; margin: 0; padding: 24px; }
+
+  /* A folha é uma A4 de verdade — inclusive a margem, que é padding dela e
+     não do @page. Assim o que se vê na tela é exatamente o que sai impresso. */
+  .folha { width: 210mm; min-height: 295mm; margin: 0 auto; background: #fff;
+           padding: 13mm 12mm; box-shadow: 0 8px 30px rgba(0,0,0,.18);
+           display: flex; flex-direction: column; }
+
+  .barra { width: 210mm; margin: 0 auto 14px; display: flex; gap: 8px; }
+  .barra button { background: #4f46e5; color: #fff; border: 0; border-radius: 8px;
+                  padding: 9px 16px; font: 600 13px inherit; cursor: pointer; }
+  .barra button.sec { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+
+  .topo { display: flex; justify-content: space-between; align-items: flex-start;
+          gap: 14px; border-bottom: 2px solid #111827; padding-bottom: 10px; margin-bottom: 12px; }
+  .marca { font-size: 9pt; letter-spacing: 1px; text-transform: uppercase; color: #6b7280; font-weight: 700; }
+  h1 { font-size: 17pt; margin: 3px 0 0; line-height: 1.2; }
+  .selos { text-align: right; white-space: nowrap; }
+  .selos span { display: inline-block; font-size: 8pt; font-weight: 700; color: #fff;
+                padding: 3px 8px; border-radius: 5px; margin-left: 4px; }
+
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 26px; font-size: 9pt;
+          color: #4b5563; margin-bottom: 14px; }
+  .meta b { color: #111827; font-weight: 600; }
+
+  h2 { font-size: 8.5pt; text-transform: uppercase; letter-spacing: .6px; color: #6b7280;
+       border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin: 0 0 8px; }
+  .bloco { margin-bottom: 14px; }
+  .desc { white-space: pre-wrap; font-size: 9.5pt; line-height: 1.5; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+  th { text-align: left; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .4px;
+       color: #6b7280; border-bottom: 1.5px solid #111827; padding: 5px 7px; }
+  td { padding: 6px 7px; border-bottom: 1px solid #eceff3; vertical-align: middle; }
+  tr { break-inside: avoid; }
+  td.n, th.n { text-align: right; white-space: nowrap; }
+  td.i, th.i { width: 6mm; color: #9ca3af; font-size: 8pt; }
+  .nome { font-weight: 600; }
+  .url { font-size: 7.5pt; color: #6b7280; word-break: break-all; margin-top: 1px; }
+  .qrcel, th.qrcel { width: ${ladoQr + 3}mm; text-align: center; }
+  .qr { display: block; margin: 0 auto; }
+  tfoot td { font-weight: 800; font-size: 11pt; border-top: 1.5px solid #111827; border-bottom: 0; padding-top: 8px; }
+  .vazio { color: #9ca3af; font-size: 8pt; }
+
+  .aprov { display: inline-flex; align-items: baseline; gap: 5px; font-size: 9pt;
+           margin: 0 14px 5px 0; }
+  .aprov i { font-style: normal; font-weight: 700; font-size: 8pt; }
+  .aprov u { text-decoration: none; color: #6b7280; font-size: 8pt; }
+
+  .rodape { margin-top: auto; padding-top: 10px; border-top: 1px solid #e5e7eb;
+            font-size: 7.5pt; color: #9ca3af; display: flex; justify-content: space-between; gap: 12px; }
+
+  @media print {
+    /* A margem passa a ser da PÁGINA, não da folha: quando o conteúdo
+       transborda para a segunda página, a margem se repete lá também — com
+       ela no padding da .folha, a página 2 nasceria colada na borda do
+       papel, dentro da faixa que a impressora não desenha. A largura útil
+       continua a mesma (210 − 24 mm), então o layout não muda. */
+    @page { size: A4; margin: 12mm; }
+    body { background: #fff; padding: 0; }
+    .folha { width: auto; min-height: 0; padding: 0; box-shadow: none; margin: 0; }
+    .barra { display: none; }
+  }
+</style></head>
+<body>
+  <div class="barra">
+    <button onclick="window.print()">Imprimir / Salvar PDF</button>
+    <button class="sec" onclick="window.close()">Fechar</button>
+  </div>
+
+  <div class="folha" id="folha">
+    <div class="topo">
+      <div>
+        <div class="marca">AUDICOM · Solicitação de equipamentos</div>
+        <h1>${escapeHTML(titulo)}</h1>
+      </div>
+      <div class="selos">
+        <span style="background:${stCores[st] || '#4b5563'}">${(STATUS_LABEL[st] || st).toUpperCase()}</span>
+        <span style="background:#374151">${escapeHTML(PRIOR_LABEL[sol.prioridade] || 'Média')}</span>
+      </div>
+    </div>
+
+    <div class="meta">
+      <div><b>Categoria:</b> ${escapeHTML(sol.categoria || '—')}</div>
+      <div><b>Solicitado por:</b> ${escapeHTML(sol.criadoPorNome || sol.criadoPor || '—')}</div>
+      <div><b>Aberta em:</b> ${horaCurta(sol.criadoEm) || '—'}</div>
+      <div><b>Nº:</b> ${escapeHTML(String(sol.id).slice(0, 8).toUpperCase())}</div>
+    </div>
+
+    ${sol.descricao ? `<div class="bloco"><h2>Descrição / Justificativa</h2>
+      <div class="desc">${escapeHTML(sol.descricao)}</div></div>` : ''}
+
+    <div class="bloco">
+      <h2>Itens solicitados — aponte a câmera no QR para abrir o link</h2>
+      <table>
+        <thead><tr>
+          <th class="i">#</th><th>Produto</th><th class="n">Qtd</th>
+          <th class="n">Valor unit.</th><th class="n">Subtotal</th><th class="qrcel">Link</th>
+        </tr></thead>
+        <tbody>${linhas}</tbody>
+        <tfoot><tr><td colspan="4"></td><td class="n">${moeda(total)}</td><td></td></tr></tfoot>
+      </table>
+    </div>
+
+    <div class="bloco">
+      <h2>Aprovadores</h2>
+      ${aprovs}
+    </div>
+
+    <div class="rodape">
+      <span>Impresso em ${new Date().toLocaleString('pt-BR')} por ${escapeHTML(window._userNome || '—')}</span>
+      <span>hub.audicomtelecom.com.br</span>
+    </div>
+  </div>
+
+<script>
+  // Garante a folha única: se o conteúdo passar da altura útil de uma A4,
+  // o documento inteiro encolhe até caber. O piso não é estético — é o
+  // mesmo fator já embutido no tamanho do QR lá no gerador: encolher além
+  // dele deixaria os módulos menores do que a impressora resolve e o
+  // código pararia de ser lido. Chegando no piso, é melhor quebrar em
+  // duas páginas do que imprimir um QR inútil.
+  function ajustarEImprimir() {
+    var folha = document.getElementById('folha');
+    var UTIL = 296 / 25.4 * 96;                 // uma A4 em px (com um fio de folga)
+    var PISO = ${PISO_ZOOM};
+    for (var i = 0; i < 3; i++) {
+      var alt = folha.getBoundingClientRect().height;
+      if (alt <= UTIL + 1) break;
+      var k = Math.max(PISO, (parseFloat(folha.style.zoom) || 1) * (UTIL / alt));
+      folha.style.zoom = k;
+      if (k <= PISO) break;
+    }
+    window.focus();
+    setTimeout(function () { window.print(); }, 150);
+  }
+  // A guia nasce de um document.write: dependendo do navegador o 'load' ja
+  // passou quando este script roda, entao vale conferir o estado antes.
+  if (document.readyState === 'complete') ajustarEImprimir();
+  else window.addEventListener('load', ajustarEImprimir);
+<\/script>
 </body></html>`;
 }
 

@@ -201,6 +201,18 @@ body {
 .sol-total { font-size: 16px; font-weight: 700; color: var(--success); }
 .sol-badges { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* Imprimir, direto do card (o clique não pode abrir o detalhe junto). */
+.sol-card-acts { display: flex; }
+.btn-imprimir { font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.sol-card-print {
+    flex: 1; justify-content: center; padding: 7px 12px; font-size: 12px; font-weight: 500;
+    background: rgba(99,102,241,0.10); border: 1px solid rgba(99,102,241,0.22);
+    border-radius: 8px; color: var(--primary-lt); transition: background var(--ease);
+}
+.sol-card-print:hover { background: rgba(99,102,241,0.2); }
+.btn-imprimir.ja-impressa { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.25); color: var(--success); }
+.btn-imprimir.ja-impressa:hover { background: rgba(16,185,129,0.2); }
+
 /* Badges de status / prioridade */
 .badge { font-size: 11px; font-weight: 600; border-radius: 6px; padding: 3px 9px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .badge i { font-size: 9px; }
