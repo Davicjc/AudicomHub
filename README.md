@@ -1,4 +1,24 @@
-# AudicomHub
+<p align="center">
+  <img src=".github/readme/banner.png" alt="AudicomHub" width="100%">
+</p>
+
+<p align="center">
+  <img alt="👥 Cliente: Audicom Telecom" src="https://img.shields.io/badge/%F0%9F%91%A5_Cliente%3A_Audicom_Telecom-1F6FEB?style=for-the-badge">
+  <a href="https://davicjc.github.io/AudicomHub/"><img alt="🌐 Ver o site" src="https://img.shields.io/badge/%F0%9F%8C%90_Ver_o_site-1DB954?style=for-the-badge"></a>
+  <img alt="HTML5" src="https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white">
+  <img alt="CSS3" src="https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white">
+  <img alt="JavaScript" src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=white">
+  <img alt="Firebase" src="https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=white">
+</p>
+
+<p align="center">Portal interno da Audicom Telecom: projetos, chamados, rondas técnicas, frota e base de conhecimento, com Firebase.</p>
+
+
+<p align="center">
+  <img src=".github/readme/preview.png" alt="Prévia de AudicomHub no computador e no celular" width="100%">
+</p>
+
+---
 
 Portal interno da Audicom Telecom para gerenciamento de projetos e suporte técnico.
 
@@ -86,3 +106,7 @@ As regras em `firebase.rules` validam o fluxo no banco:
 
 Abra o `iniciar.bat` ou sirva os arquivos com qualquer servidor HTTP local.
 O projeto usa Firebase diretamente no frontend — não há backend próprio.
+
+---
+
+<p align="center">Desenvolvido por <a href="https://github.com/Davicjc">Davi Castro</a> · <a href="https://davicjc.com">davicjc.com</a><br><sub>para Audicom Telecom</sub></p>
